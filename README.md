@@ -16,10 +16,9 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License MIT">
 </p>
 
-AnyChat 是一个聚合了多个 AI 聊天服务的桌面应用，旨在提供统一入口与低占用的桌面端体验。它让你能在一个窗口中无缝切换不同的 AI 服务，专注于高性能、轻量化的日常使用。
+chathub 是一个聚合了多个 AI 聊天服务的桌面应用，旨在提供统一入口与低占用的桌面端体验。它让你能在一个窗口中无缝切换不同的 AI 服务，专注于高性能、轻量化的日常使用。
 
-> 如果您需要更强大的聊天数据本地获取和管理功能，推荐使用：[AmberKeeper](https://github.com/JS-banana/amberkeeper)
-
+ 
 > 如果 Mac 安装打开后提示 `“AnyChat”已损坏，无法打开。`，执行下 `xattr -rd com.apple.quarantine /Applications/AnyChat.app` 这个命令。
 
 ## 界面
@@ -28,7 +27,7 @@ AnyChat 是一个聚合了多个 AI 聊天服务的桌面应用，旨在提供�
 
 ## ✨ 核心特性
 
-- **🚀 多服务聚合**: 统一管理 ChatGPT, Gemini, Claude 等 12+ 种主流 AI 服务。
+- **🚀 多服务聚合**: 统一管理 ChatGPT, Gemini, Claude,deepseek,qwen,doubao等 12+ 种主流 AI 服务。
 - **⌨️ 效率优先**: 支持快捷键快速切换服务，极简的 UI 设计。
 - **⌨️ 性能优先**: 高性能、低占用，基于 Tauri，安装包大小仅 7 MB。
 
