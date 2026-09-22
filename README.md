@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/js-banana/anychat/main/logo.png" width="80" height="80" alt="AnyChat Logo">
 </p>
 
-<h1 align="center">AnyChat</h1>
+<h1 align="center">ChatHub</h1>
 
 <p align="center">
   <strong>多 AI Chat 聚合桌面客户端</strong>
