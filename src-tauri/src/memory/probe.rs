@@ -155,6 +155,7 @@ pub async fn probe_service(app: &tauri::AppHandle, service: &ServiceId, now_ms: 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EvalError {
     /// No native evaluate-with-result binding on this OS yet. There is no fallback channel.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     UnsupportedPlatform,
     WebviewGone(String),
     Engine(String),

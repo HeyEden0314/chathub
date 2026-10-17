@@ -126,6 +126,31 @@ pub fn parse_add_response(http_status: u16, body: &str) -> AddOutcome {
     }
 }
 
+const DEEP_CHECK_MESSAGE_CHARS: usize = 300;
+
+/// `/api/v1/status` runs one vector-store read, one embed, and one 1-token LLM call.
+/// On failure it answers 503 with each failing check as `"error: …"`.
+pub fn parse_deep_check(http_status: u16, body: &str) -> Result<(), String> {
+    let parsed: Option<Value> = serde_json::from_str(body).ok();
+    let text = |key: &str| parsed.as_ref().and_then(|v| v.get(key)).and_then(Value::as_str);
+    if (200..=299).contains(&http_status) && text("status") != Some("degraded") {
+        return Ok(());
+    }
+    let failures: Vec<String> = ["llm", "embed", "vdb"]
+        .iter()
+        .filter_map(|key| {
+            let message = text(key)?.strip_prefix("error")?.trim_start_matches(':').trim();
+            Some(format!("{key}: {message}"))
+        })
+        .collect();
+    let message = if failures.is_empty() {
+        text("error").map_or_else(|| format!("HTTP {http_status}"), str::to_string)
+    } else {
+        failures.join("; ")
+    };
+    Err(message.chars().take(DEEP_CHECK_MESSAGE_CHARS).collect())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryKind {
@@ -342,6 +367,25 @@ mod tests {
         assert_eq!(body["messages"][0], json!({"role": "user", "content": "u0"}));
         assert_eq!(body["messages"][1]["role"], "assistant");
         assert_eq!(body["metadata"]["anychat_fps"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn parse_deep_check_names_each_failing_check() {
+        assert_eq!(parse_deep_check(200, r#"{"status":"ok","vdb":"ok","embed":"ok","llm":"ok"}"#), Ok(()));
+        assert_eq!(
+            parse_deep_check(
+                503,
+                r#"{"status":"degraded","vdb":"ok","embed":"error: Connection error.","llm":"error: Error code: 401 - invalid key"}"#
+            ),
+            Err("llm: Error code: 401 - invalid key; embed: Connection error.".to_string())
+        );
+        assert_eq!(
+            parse_deep_check(503, r#"{"status":"error","error":"client init failed: boom"}"#),
+            Err("client init failed: boom".to_string())
+        );
+        assert_eq!(parse_deep_check(502, "<html>"), Err("HTTP 502".to_string()));
+        let long = format!(r#"{{"status":"degraded","llm":"error: {}"}}"#, "x".repeat(1000));
+        assert_eq!(parse_deep_check(503, &long).unwrap_err().chars().count(), DEEP_CHECK_MESSAGE_CHARS);
     }
 
     #[test]

@@ -95,6 +95,7 @@ pub struct ConfigProblem {
     pub message: String,
 }
 
+#[cfg(test)]
 pub const CONFIG_FIELDS: &[&str] = &[
     "generation.baseUrl",
     "generation.apiKey",
