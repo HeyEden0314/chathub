@@ -135,7 +135,10 @@ pub fn desired_from(raw: &RawMemorySettings, capture_targets: &[String]) -> Desi
 
     let gen_base = parse_base_url(&raw.generation.base_url);
     if gen_base.is_err() {
-        problem("generation.baseUrl", "接口地址需以 http:// 或 https:// 开头");
+        problem(
+            "generation.baseUrl",
+            "接口地址需以 http:// 或 https:// 开头",
+        );
     }
     let gen_key = raw.generation.api_key.trim();
     if gen_key.is_empty() {
@@ -291,8 +294,16 @@ pub fn store_id(emb: &EmbeddingConfig) -> StoreId {
             slug.push('-');
         }
     }
-    let slug: String = slug.trim_matches('-').chars().take(STORE_MODEL_SLUG_MAX).collect();
-    let slug = if slug.is_empty() { "model".to_string() } else { slug };
+    let slug: String = slug
+        .trim_matches('-')
+        .chars()
+        .take(STORE_MODEL_SLUG_MAX)
+        .collect();
+    let slug = if slug.is_empty() {
+        "model".to_string()
+    } else {
+        slug
+    };
     let host_hash = fnv1a64(endpoint_host(emb.base_url.as_deref()).as_bytes());
     StoreId(format!("{}-{}-{:08x}", slug, emb.dims, host_hash >> 32))
 }
@@ -318,10 +329,16 @@ pub fn sidecar_env(cfg: &RuntimeConfig, port: u16, store_dir: &Path) -> EnvPlan 
             pair("MEMORY_MODE", "pro"),
             pair("MEMORY_LLM_MODEL", &cfg.generation.model),
             pair("MEMORY_LLM_API_KEY", &cfg.generation.api_key.0),
-            pair("MEMORY_LLM_BASE_URL", cfg.generation.base_url.as_deref().unwrap_or("")),
+            pair(
+                "MEMORY_LLM_BASE_URL",
+                cfg.generation.base_url.as_deref().unwrap_or(""),
+            ),
             pair("MEMORY_EMBEDDER_MODEL", &cfg.embedding.model),
             pair("MEMORY_EMBEDDER_API_KEY", &cfg.embedding.api_key.0),
-            pair("MEMORY_EMBEDDER_BASE_URL", cfg.embedding.base_url.as_deref().unwrap_or("")),
+            pair(
+                "MEMORY_EMBEDDER_BASE_URL",
+                cfg.embedding.base_url.as_deref().unwrap_or(""),
+            ),
             pair("MEMORY_EMBEDDING_DIMS", &cfg.embedding.dims.to_string()),
             pair("MEMORY_DATA_DIR", &store_dir.join("hy").to_string_lossy()),
             pair("HY_MEMORY_SERVER_HOST", "127.0.0.1"),
@@ -338,7 +355,9 @@ pub fn python_candidates(cmd: &PythonCommand, windows: bool) -> Vec<Vec<String>>
     let argv = |parts: &[&str]| parts.iter().map(|p| p.to_string()).collect::<Vec<_>>();
     match cmd {
         PythonCommand::Explicit(program) => vec![vec![program.clone()]],
-        PythonCommand::Auto if windows => vec![argv(&["py", "-3"]), argv(&["python"]), argv(&["python3"])],
+        PythonCommand::Auto if windows => {
+            vec![argv(&["py", "-3"]), argv(&["python"]), argv(&["python3"])]
+        }
         PythonCommand::Auto => vec![argv(&["python3"]), argv(&["python"])],
     }
 }
@@ -353,12 +372,26 @@ pub fn install_hint(python: &str) -> String {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarFailure {
-    PythonNotFound { tried: Vec<String> },
-    ModuleMissing { python: String },
-    ExitedOnStart { code: Option<i32>, stderr_tail: String },
-    HealthTimeout { after_ms: u64 },
-    ModelCheckFailed { message: String },
-    CrashLoop { restarts: u8, stderr_tail: String },
+    PythonNotFound {
+        tried: Vec<String>,
+    },
+    ModuleMissing {
+        python: String,
+    },
+    ExitedOnStart {
+        code: Option<i32>,
+        stderr_tail: String,
+    },
+    HealthTimeout {
+        after_ms: u64,
+    },
+    ModelCheckFailed {
+        message: String,
+    },
+    CrashLoop {
+        restarts: u8,
+        stderr_tail: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -368,25 +401,48 @@ pub enum SidecarPhase {
     /// Configured, process stopped. Lazy start on demand; idle stop returns here.
     Idle,
     /// `port == 0` until the shell reports `Spawned`.
-    Starting { port: u16, attempt: u8, since_ms: u64 },
+    Starting {
+        port: u16,
+        attempt: u8,
+        since_ms: u64,
+    },
     /// `verified`: deep `/api/v1/status` passed for this runtime fingerprint.
-    Ready { port: u16, last_used_ms: u64, verified: bool },
-    Backoff { attempt: u8, until_ms: u64, last_exit: String },
+    Ready {
+        port: u16,
+        last_used_ms: u64,
+        verified: bool,
+    },
+    Backoff {
+        attempt: u8,
+        until_ms: u64,
+        last_exit: String,
+    },
     Failed(SidecarFailure),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarEvent {
     /// From `memory_sync_runtime`. `restart` = runtime fingerprint changed.
-    Desired { on: bool, valid: bool, restart: bool },
+    Desired {
+        on: bool,
+        valid: bool,
+        restart: bool,
+    },
     /// Ingest has a batch, or list was called.
     Demand,
-    Spawned { port: u16 },
+    Spawned {
+        port: u16,
+    },
     SpawnFailed(SidecarFailure),
     Healthy,
     DeepCheckPassed,
-    DeepCheckFailed { message: String },
-    Exited { code: Option<i32>, stderr_tail: String },
+    DeepCheckFailed {
+        message: String,
+    },
+    Exited {
+        code: Option<i32>,
+        stderr_tail: String,
+    },
     Used,
     Tick,
 }
@@ -394,7 +450,9 @@ pub enum SidecarEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarEffect {
     /// Preflight `<python> -c "import hy_memory"`, pick a free port, spawn.
-    Spawn { attempt: u8 },
+    Spawn {
+        attempt: u8,
+    },
     PollHealth,
     /// The shell may answer `DeepCheckPassed` without a request when this runtime
     /// fingerprint already passed in this session.
@@ -421,7 +479,11 @@ pub fn describe_exit(code: Option<i32>, stderr_tail: &str) -> String {
     }
 }
 
-fn backoff_after_exit(attempt: u8, now_ms: u64, last_exit: String) -> (SidecarPhase, Vec<SidecarEffect>) {
+fn backoff_after_exit(
+    attempt: u8,
+    now_ms: u64,
+    last_exit: String,
+) -> (SidecarPhase, Vec<SidecarEffect>) {
     let step = BACKOFF_STEPS[usize::from(attempt.clamp(1, 3)) - 1];
     (
         SidecarPhase::Backoff {
@@ -434,7 +496,11 @@ fn backoff_after_exit(attempt: u8, now_ms: u64, last_exit: String) -> (SidecarPh
 }
 
 /// Total over (phase, event). Only this function changes `SidecarPhase`.
-pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarPhase, Vec<SidecarEffect>) {
+pub fn step(
+    phase: &SidecarPhase,
+    event: SidecarEvent,
+    now_ms: u64,
+) -> (SidecarPhase, Vec<SidecarEffect>) {
     use SidecarEffect as E;
     use SidecarPhase as P;
 
@@ -449,18 +515,48 @@ pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarP
         (_, SidecarEvent::Desired { .. }) => stay(),
 
         (P::Idle, SidecarEvent::Demand) => (
-            P::Starting { port: 0, attempt: 1, since_ms: now_ms },
+            P::Starting {
+                port: 0,
+                attempt: 1,
+                since_ms: now_ms,
+            },
             vec![E::Spawn { attempt: 1 }],
         ),
-        (P::Ready { port, verified: true, .. }, SidecarEvent::Demand) => (
-            P::Ready { port: *port, last_used_ms: now_ms, verified: true },
+        (
+            P::Ready {
+                port,
+                verified: true,
+                ..
+            },
+            SidecarEvent::Demand,
+        ) => (
+            P::Ready {
+                port: *port,
+                last_used_ms: now_ms,
+                verified: true,
+            },
             vec![E::NotifyWaiters],
         ),
-        (P::Starting { .. } | P::Ready { verified: false, .. }, SidecarEvent::Demand) => stay(),
+        (
+            P::Starting { .. }
+            | P::Ready {
+                verified: false, ..
+            },
+            SidecarEvent::Demand,
+        ) => stay(),
         (_, SidecarEvent::Demand) => (phase.clone(), vec![E::NotifyWaiters]),
 
-        (P::Starting { attempt, since_ms, .. }, SidecarEvent::Spawned { port }) => (
-            P::Starting { port, attempt: *attempt, since_ms: *since_ms },
+        (
+            P::Starting {
+                attempt, since_ms, ..
+            },
+            SidecarEvent::Spawned { port },
+        ) => (
+            P::Starting {
+                port,
+                attempt: *attempt,
+                since_ms: *since_ms,
+            },
             vec![E::PollHealth],
         ),
         (_, SidecarEvent::Spawned { .. }) => (phase.clone(), vec![E::Kill]),
@@ -471,13 +567,28 @@ pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarP
         (_, SidecarEvent::SpawnFailed(_)) => stay(),
 
         (P::Starting { port, .. }, SidecarEvent::Healthy) if *port != 0 => (
-            P::Ready { port: *port, last_used_ms: now_ms, verified: false },
+            P::Ready {
+                port: *port,
+                last_used_ms: now_ms,
+                verified: false,
+            },
             vec![E::DeepCheck],
         ),
         (_, SidecarEvent::Healthy) => stay(),
 
-        (P::Ready { port, verified: false, .. }, SidecarEvent::DeepCheckPassed) => (
-            P::Ready { port: *port, last_used_ms: now_ms, verified: true },
+        (
+            P::Ready {
+                port,
+                verified: false,
+                ..
+            },
+            SidecarEvent::DeepCheckPassed,
+        ) => (
+            P::Ready {
+                port: *port,
+                last_used_ms: now_ms,
+                verified: true,
+            },
             vec![E::NotifyWaiters],
         ),
         (_, SidecarEvent::DeepCheckPassed) => stay(),
@@ -500,13 +611,18 @@ pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarP
         (_, SidecarEvent::Exited { .. }) => stay(),
 
         (P::Ready { port, verified, .. }, SidecarEvent::Used) => (
-            P::Ready { port: *port, last_used_ms: now_ms, verified: *verified },
+            P::Ready {
+                port: *port,
+                last_used_ms: now_ms,
+                verified: *verified,
+            },
             Vec::new(),
         ),
         (_, SidecarEvent::Used) => stay(),
 
         (P::Starting { port, since_ms, .. }, SidecarEvent::Tick)
-            if *port != 0 && now_ms.saturating_sub(*since_ms) >= HEALTH_TIMEOUT.as_millis() as u64 =>
+            if *port != 0
+                && now_ms.saturating_sub(*since_ms) >= HEALTH_TIMEOUT.as_millis() as u64 =>
         {
             stop_to(P::Failed(SidecarFailure::HealthTimeout {
                 after_ms: now_ms.saturating_sub(*since_ms),
@@ -517,7 +633,14 @@ pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarP
         {
             (P::Idle, vec![E::Kill])
         }
-        (P::Backoff { attempt, until_ms, last_exit }, SidecarEvent::Tick) if now_ms >= *until_ms => {
+        (
+            P::Backoff {
+                attempt,
+                until_ms,
+                last_exit,
+            },
+            SidecarEvent::Tick,
+        ) if now_ms >= *until_ms => {
             if *attempt >= MAX_RESTARTS {
                 (
                     P::Failed(SidecarFailure::CrashLoop {
@@ -529,7 +652,11 @@ pub fn step(phase: &SidecarPhase, event: SidecarEvent, now_ms: u64) -> (SidecarP
             } else {
                 let next = attempt + 1;
                 (
-                    P::Starting { port: 0, attempt: next, since_ms: now_ms },
+                    P::Starting {
+                        port: 0,
+                        attempt: next,
+                        since_ms: now_ms,
+                    },
                     vec![E::Spawn { attempt: next }],
                 )
             }
@@ -574,7 +701,10 @@ mod tests {
 
     #[test]
     fn desired_from_off_when_disabled() {
-        let raw = RawMemorySettings { enabled: false, ..raw_settings() };
+        let raw = RawMemorySettings {
+            enabled: false,
+            ..raw_settings()
+        };
         assert_eq!(desired_from(&raw, &[]), Desired::Off);
     }
 
@@ -584,7 +714,10 @@ mod tests {
         raw.generation.base_url = "ftp://x".into();
         raw.generation.api_key = " ".into();
         raw.generation.model = String::new();
-        raw.embedding.source = RawEmbeddingSource::Separate { base_url: "not a url".into(), api_key: String::new() };
+        raw.embedding.source = RawEmbeddingSource::Separate {
+            base_url: "not a url".into(),
+            api_key: String::new(),
+        };
         raw.embedding.model = String::new();
         raw.embedding.dims = 0;
         raw.python_command = "py\nthon".into();
@@ -611,11 +744,19 @@ mod tests {
     #[test]
     fn desired_from_resolves_reuse_and_sorts_targets() {
         let raw = raw_settings();
-        let Desired::On { config, targets } = desired_from(&raw, &["gemini".into(), "chatgpt".into(), "gemini".into()]) else {
+        let Desired::On { config, targets } =
+            desired_from(&raw, &["gemini".into(), "chatgpt".into(), "gemini".into()])
+        else {
             panic!("expected On");
         };
-        assert_eq!(targets, vec![ServiceId("chatgpt".into()), ServiceId("gemini".into())]);
-        assert_eq!(config.generation.base_url.as_deref(), Some("https://api.example.com/v1"));
+        assert_eq!(
+            targets,
+            vec![ServiceId("chatgpt".into()), ServiceId("gemini".into())]
+        );
+        assert_eq!(
+            config.generation.base_url.as_deref(),
+            Some("https://api.example.com/v1")
+        );
         assert_eq!(config.embedding.base_url, config.generation.base_url);
         assert_eq!(config.embedding.api_key, config.generation.api_key);
         assert_eq!(config.python, PythonCommand::Auto);
@@ -634,12 +775,22 @@ mod tests {
         .unwrap();
         let cfg = config_of(&raw);
         assert_eq!(cfg.generation.base_url, None);
-        assert_eq!(cfg.embedding.base_url.as_deref(), Some("http://localhost:11434/v1"));
-        assert_eq!(cfg.python, PythonCommand::Explicit("/usr/bin/python3".into()));
+        assert_eq!(
+            cfg.embedding.base_url.as_deref(),
+            Some("http://localhost:11434/v1")
+        );
+        assert_eq!(
+            cfg.python,
+            PythonCommand::Explicit("/usr/bin/python3".into())
+        );
 
         let reuse: RawMemorySettings =
-            serde_json::from_value(json!({"embedding": {"source": {"kind": "reuse-generation"}}})).unwrap();
-        assert!(matches!(reuse.embedding.source, RawEmbeddingSource::ReuseGeneration));
+            serde_json::from_value(json!({"embedding": {"source": {"kind": "reuse-generation"}}}))
+                .unwrap();
+        assert!(matches!(
+            reuse.embedding.source,
+            RawEmbeddingSource::ReuseGeneration
+        ));
     }
 
     #[test]
@@ -691,13 +842,18 @@ mod tests {
 
         let mut weird = raw_settings();
         weird.embedding.model = "BAAI/bge-m3:latest".into();
-        assert!(store_id(&config_of(&weird).embedding).0.starts_with("baai-bge-m3-latest-1536-"));
+        assert!(store_id(&config_of(&weird).embedding)
+            .0
+            .starts_with("baai-bge-m3-latest-1536-"));
     }
 
     #[test]
     fn endpoint_host_parses_urls() {
         assert_eq!(endpoint_host(None), "api.openai.com");
-        assert_eq!(endpoint_host(Some("https://User@API.Example.com:8443/v1?x=1")), "api.example.com");
+        assert_eq!(
+            endpoint_host(Some("https://User@API.Example.com:8443/v1?x=1")),
+            "api.example.com"
+        );
         assert_eq!(endpoint_host(Some("http://[::1]:11434/v1")), "[::1]");
         assert!(parse_base_url("https://").is_err());
     }
@@ -707,7 +863,12 @@ mod tests {
         let cfg = config_of(&raw_settings());
         let dir = Path::new("/data/memory/store");
         let plan = sidecar_env(&cfg, 41234, dir);
-        let get = |k: &str| plan.set.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str());
+        let get = |k: &str| {
+            plan.set
+                .iter()
+                .find(|(key, _)| key == k)
+                .map(|(_, v)| v.as_str())
+        };
         assert_eq!(plan.cwd, dir);
         assert_eq!(plan.remove_prefixes, INHERITED_ENV_TO_STRIP);
         for prefix in ["MEMORY_", "LLM_", "OPENAI_", "EMBEDDING_", "HY_MEMORY_"] {
@@ -716,24 +877,41 @@ mod tests {
         assert_eq!(get("MEMORY_MODE"), Some("pro"));
         assert_eq!(get("MEMORY_LLM_MODEL"), Some("gpt-4.1-mini"));
         assert_eq!(get("MEMORY_LLM_API_KEY"), Some("sk-test"));
-        assert_eq!(get("MEMORY_LLM_BASE_URL"), Some("https://api.example.com/v1"));
+        assert_eq!(
+            get("MEMORY_LLM_BASE_URL"),
+            Some("https://api.example.com/v1")
+        );
         assert_eq!(get("MEMORY_EMBEDDING_DIMS"), Some("1536"));
         assert_eq!(get("HY_MEMORY_SERVER_HOST"), Some("127.0.0.1"));
         assert_eq!(get("HY_MEMORY_SERVER_PORT"), Some("41234"));
-        assert_eq!(get("MEMORY_DATA_DIR").map(PathBuf::from), Some(dir.join("hy")));
+        assert_eq!(
+            get("MEMORY_DATA_DIR").map(PathBuf::from),
+            Some(dir.join("hy"))
+        );
 
         let mut default_host = raw_settings();
         default_host.generation.base_url = String::new();
         let plan = sidecar_env(&config_of(&default_host), 1, dir);
-        assert!(plan.set.contains(&("MEMORY_LLM_BASE_URL".to_string(), String::new())));
+        assert!(plan
+            .set
+            .contains(&("MEMORY_LLM_BASE_URL".to_string(), String::new())));
     }
 
     #[test]
     fn python_candidates_per_platform() {
-        assert_eq!(python_candidates(&PythonCommand::Auto, false), vec![vec!["python3"], vec!["python"]]);
-        assert_eq!(python_candidates(&PythonCommand::Auto, true)[0], vec!["py", "-3"]);
         assert_eq!(
-            python_candidates(&PythonCommand::Explicit("C:\\Program Files\\Python\\python.exe".into()), true),
+            python_candidates(&PythonCommand::Auto, false),
+            vec![vec!["python3"], vec!["python"]]
+        );
+        assert_eq!(
+            python_candidates(&PythonCommand::Auto, true)[0],
+            vec!["py", "-3"]
+        );
+        assert_eq!(
+            python_candidates(
+                &PythonCommand::Explicit("C:\\Program Files\\Python\\python.exe".into()),
+                true
+            ),
             vec![vec!["C:\\Program Files\\Python\\python.exe"]]
         );
     }
@@ -741,40 +919,90 @@ mod tests {
     // ── step transition table ──
 
     fn ready(verified: bool) -> SidecarPhase {
-        SidecarPhase::Ready { port: 4000, last_used_ms: 0, verified }
+        SidecarPhase::Ready {
+            port: 4000,
+            last_used_ms: 0,
+            verified,
+        }
     }
 
     #[test]
     fn step_lazy_start_to_verified_ready() {
         use SidecarEffect as E;
         let (p, fx) = step(&SidecarPhase::Idle, SidecarEvent::Demand, 10);
-        assert_eq!(p, SidecarPhase::Starting { port: 0, attempt: 1, since_ms: 10 });
+        assert_eq!(
+            p,
+            SidecarPhase::Starting {
+                port: 0,
+                attempt: 1,
+                since_ms: 10
+            }
+        );
         assert_eq!(fx, vec![E::Spawn { attempt: 1 }]);
 
         let (p, fx) = step(&p, SidecarEvent::Spawned { port: 4000 }, 20);
-        assert_eq!(p, SidecarPhase::Starting { port: 4000, attempt: 1, since_ms: 10 });
+        assert_eq!(
+            p,
+            SidecarPhase::Starting {
+                port: 4000,
+                attempt: 1,
+                since_ms: 10
+            }
+        );
         assert_eq!(fx, vec![E::PollHealth]);
 
         let (p, fx) = step(&p, SidecarEvent::Healthy, 30);
-        assert_eq!(p, SidecarPhase::Ready { port: 4000, last_used_ms: 30, verified: false });
+        assert_eq!(
+            p,
+            SidecarPhase::Ready {
+                port: 4000,
+                last_used_ms: 30,
+                verified: false
+            }
+        );
         assert_eq!(fx, vec![E::DeepCheck]);
 
         let (p, fx) = step(&p, SidecarEvent::Demand, 35);
         assert_eq!(fx, vec![], "waiters keep waiting during the deep check");
 
         let (p, fx) = step(&p, SidecarEvent::DeepCheckPassed, 40);
-        assert_eq!(p, SidecarPhase::Ready { port: 4000, last_used_ms: 40, verified: true });
+        assert_eq!(
+            p,
+            SidecarPhase::Ready {
+                port: 4000,
+                last_used_ms: 40,
+                verified: true
+            }
+        );
         assert_eq!(fx, vec![E::NotifyWaiters]);
 
         let (p, fx) = step(&p, SidecarEvent::Demand, 50);
-        assert_eq!(p, SidecarPhase::Ready { port: 4000, last_used_ms: 50, verified: true });
+        assert_eq!(
+            p,
+            SidecarPhase::Ready {
+                port: 4000,
+                last_used_ms: 50,
+                verified: true
+            }
+        );
         assert_eq!(fx, vec![E::NotifyWaiters]);
     }
 
     #[test]
     fn step_deep_check_failure_is_terminal() {
-        let (p, fx) = step(&ready(false), SidecarEvent::DeepCheckFailed { message: "401 Unauthorized".into() }, 1);
-        assert_eq!(p, SidecarPhase::Failed(SidecarFailure::ModelCheckFailed { message: "401 Unauthorized".into() }));
+        let (p, fx) = step(
+            &ready(false),
+            SidecarEvent::DeepCheckFailed {
+                message: "401 Unauthorized".into(),
+            },
+            1,
+        );
+        assert_eq!(
+            p,
+            SidecarPhase::Failed(SidecarFailure::ModelCheckFailed {
+                message: "401 Unauthorized".into()
+            })
+        );
         assert_eq!(fx, vec![SidecarEffect::Kill, SidecarEffect::NotifyWaiters]);
         let (p2, fx) = step(&p, SidecarEvent::Demand, 2);
         assert_eq!((p2, fx), (p, vec![SidecarEffect::NotifyWaiters]));
@@ -782,52 +1010,134 @@ mod tests {
 
     #[test]
     fn step_spawn_failures_and_early_exit() {
-        let starting = SidecarPhase::Starting { port: 0, attempt: 1, since_ms: 0 };
-        let failure = SidecarFailure::ModuleMissing { python: "python3".into() };
+        let starting = SidecarPhase::Starting {
+            port: 0,
+            attempt: 1,
+            since_ms: 0,
+        };
+        let failure = SidecarFailure::ModuleMissing {
+            python: "python3".into(),
+        };
         assert_eq!(
             step(&starting, SidecarEvent::SpawnFailed(failure.clone()), 1),
-            (SidecarPhase::Failed(failure), vec![SidecarEffect::NotifyWaiters])
+            (
+                SidecarPhase::Failed(failure),
+                vec![SidecarEffect::NotifyWaiters]
+            )
         );
-        let spawned = SidecarPhase::Starting { port: 4000, attempt: 1, since_ms: 0 };
-        let (p, _) = step(&spawned, SidecarEvent::Exited { code: Some(1), stderr_tail: "Traceback".into() }, 1);
+        let spawned = SidecarPhase::Starting {
+            port: 4000,
+            attempt: 1,
+            since_ms: 0,
+        };
+        let (p, _) = step(
+            &spawned,
+            SidecarEvent::Exited {
+                code: Some(1),
+                stderr_tail: "Traceback".into(),
+            },
+            1,
+        );
         assert_eq!(
             p,
-            SidecarPhase::Failed(SidecarFailure::ExitedOnStart { code: Some(1), stderr_tail: "Traceback".into() })
+            SidecarPhase::Failed(SidecarFailure::ExitedOnStart {
+                code: Some(1),
+                stderr_tail: "Traceback".into()
+            })
         );
     }
 
     #[test]
     fn step_health_timeout() {
-        let spawned = SidecarPhase::Starting { port: 4000, attempt: 1, since_ms: 0 };
+        let spawned = SidecarPhase::Starting {
+            port: 4000,
+            attempt: 1,
+            since_ms: 0,
+        };
         assert_eq!(step(&spawned, SidecarEvent::Tick, 1_000).0, spawned);
         let timeout = HEALTH_TIMEOUT.as_millis() as u64;
         let (p, fx) = step(&spawned, SidecarEvent::Tick, timeout);
-        assert_eq!(p, SidecarPhase::Failed(SidecarFailure::HealthTimeout { after_ms: timeout }));
+        assert_eq!(
+            p,
+            SidecarPhase::Failed(SidecarFailure::HealthTimeout { after_ms: timeout })
+        );
         assert_eq!(fx, vec![SidecarEffect::Kill, SidecarEffect::NotifyWaiters]);
     }
 
     #[test]
     fn step_crash_backoff_then_crash_loop() {
-        let (p, fx) = step(&ready(true), SidecarEvent::Exited { code: None, stderr_tail: String::new() }, 100);
-        assert_eq!(p, SidecarPhase::Backoff { attempt: 1, until_ms: 5_100, last_exit: "signal".into() });
+        let (p, fx) = step(
+            &ready(true),
+            SidecarEvent::Exited {
+                code: None,
+                stderr_tail: String::new(),
+            },
+            100,
+        );
+        assert_eq!(
+            p,
+            SidecarPhase::Backoff {
+                attempt: 1,
+                until_ms: 5_100,
+                last_exit: "signal".into()
+            }
+        );
         assert_eq!(fx, vec![SidecarEffect::NotifyWaiters]);
         assert_eq!(step(&p, SidecarEvent::Tick, 5_000).0, p);
 
         let (p, fx) = step(&p, SidecarEvent::Tick, 5_100);
-        assert_eq!(p, SidecarPhase::Starting { port: 0, attempt: 2, since_ms: 5_100 });
+        assert_eq!(
+            p,
+            SidecarPhase::Starting {
+                port: 0,
+                attempt: 2,
+                since_ms: 5_100
+            }
+        );
         assert_eq!(fx, vec![SidecarEffect::Spawn { attempt: 2 }]);
         let (p, _) = step(&p, SidecarEvent::Spawned { port: 4001 }, 5_200);
-        let (p, _) = step(&p, SidecarEvent::Exited { code: Some(1), stderr_tail: "oom".into() }, 6_000);
-        assert_eq!(p, SidecarPhase::Backoff { attempt: 2, until_ms: 36_000, last_exit: "code 1: oom".into() });
+        let (p, _) = step(
+            &p,
+            SidecarEvent::Exited {
+                code: Some(1),
+                stderr_tail: "oom".into(),
+            },
+            6_000,
+        );
+        assert_eq!(
+            p,
+            SidecarPhase::Backoff {
+                attempt: 2,
+                until_ms: 36_000,
+                last_exit: "code 1: oom".into()
+            }
+        );
 
         let (p, _) = step(&p, SidecarEvent::Tick, 36_000);
         let (p, _) = step(&p, SidecarEvent::Spawned { port: 4002 }, 36_100);
-        let (p, _) = step(&p, SidecarEvent::Exited { code: Some(1), stderr_tail: "oom".into() }, 37_000);
-        assert_eq!(p, SidecarPhase::Backoff { attempt: 3, until_ms: 157_000, last_exit: "code 1: oom".into() });
+        let (p, _) = step(
+            &p,
+            SidecarEvent::Exited {
+                code: Some(1),
+                stderr_tail: "oom".into(),
+            },
+            37_000,
+        );
+        assert_eq!(
+            p,
+            SidecarPhase::Backoff {
+                attempt: 3,
+                until_ms: 157_000,
+                last_exit: "code 1: oom".into()
+            }
+        );
         let (p, fx) = step(&p, SidecarEvent::Tick, 157_000);
         assert_eq!(
             p,
-            SidecarPhase::Failed(SidecarFailure::CrashLoop { restarts: MAX_RESTARTS, stderr_tail: "code 1: oom".into() })
+            SidecarPhase::Failed(SidecarFailure::CrashLoop {
+                restarts: MAX_RESTARTS,
+                stderr_tail: "code 1: oom".into()
+            })
         );
         assert_eq!(fx, vec![SidecarEffect::NotifyWaiters]);
     }
@@ -837,25 +1147,61 @@ mod tests {
         let idle_ms = IDLE_STOP.as_millis() as u64;
         let (p, _) = step(&ready(true), SidecarEvent::Used, idle_ms - 1);
         assert_eq!(step(&p, SidecarEvent::Tick, idle_ms).0, p);
-        assert_eq!(step(&ready(true), SidecarEvent::Tick, idle_ms), (SidecarPhase::Idle, vec![SidecarEffect::Kill]));
+        assert_eq!(
+            step(&ready(true), SidecarEvent::Tick, idle_ms),
+            (SidecarPhase::Idle, vec![SidecarEffect::Kill])
+        );
     }
 
     #[test]
     fn step_desired_changes() {
         use SidecarEffect as E;
         let stop = vec![E::Kill, E::NotifyWaiters];
-        let off = SidecarEvent::Desired { on: false, valid: true, restart: false };
-        let invalid = SidecarEvent::Desired { on: true, valid: false, restart: false };
-        let restart = SidecarEvent::Desired { on: true, valid: true, restart: true };
-        let same = SidecarEvent::Desired { on: true, valid: true, restart: false };
+        let off = SidecarEvent::Desired {
+            on: false,
+            valid: true,
+            restart: false,
+        };
+        let invalid = SidecarEvent::Desired {
+            on: true,
+            valid: false,
+            restart: false,
+        };
+        let restart = SidecarEvent::Desired {
+            on: true,
+            valid: true,
+            restart: true,
+        };
+        let same = SidecarEvent::Desired {
+            on: true,
+            valid: true,
+            restart: false,
+        };
 
-        assert_eq!(step(&ready(true), off.clone(), 0), (SidecarPhase::Off, stop.clone()));
-        assert_eq!(step(&ready(true), invalid.clone(), 0), (SidecarPhase::NeedsConfig, stop.clone()));
-        assert_eq!(step(&ready(true), restart.clone(), 0), (SidecarPhase::Idle, stop.clone()));
+        assert_eq!(
+            step(&ready(true), off.clone(), 0),
+            (SidecarPhase::Off, stop.clone())
+        );
+        assert_eq!(
+            step(&ready(true), invalid.clone(), 0),
+            (SidecarPhase::NeedsConfig, stop.clone())
+        );
+        assert_eq!(
+            step(&ready(true), restart.clone(), 0),
+            (SidecarPhase::Idle, stop.clone())
+        );
         assert_eq!(step(&ready(true), same.clone(), 0), (ready(true), vec![]));
-        assert_eq!(step(&SidecarPhase::Off, same.clone(), 0), (SidecarPhase::Idle, vec![]));
-        assert_eq!(step(&SidecarPhase::NeedsConfig, same.clone(), 0), (SidecarPhase::Idle, vec![]));
-        let failed = SidecarPhase::Failed(SidecarFailure::PythonNotFound { tried: vec!["python3".into()] });
+        assert_eq!(
+            step(&SidecarPhase::Off, same.clone(), 0),
+            (SidecarPhase::Idle, vec![])
+        );
+        assert_eq!(
+            step(&SidecarPhase::NeedsConfig, same.clone(), 0),
+            (SidecarPhase::Idle, vec![])
+        );
+        let failed = SidecarPhase::Failed(SidecarFailure::PythonNotFound {
+            tried: vec!["python3".into()],
+        });
         assert_eq!(step(&failed, same, 0).0, failed);
         assert_eq!(step(&failed, restart, 0).0, SidecarPhase::Idle);
         assert_eq!(step(&failed, off, 0).0, SidecarPhase::Off);
@@ -863,13 +1209,25 @@ mod tests {
 
     #[test]
     fn step_ignores_stale_process_events() {
-        assert_eq!(step(&SidecarPhase::Idle, SidecarEvent::Spawned { port: 1 }, 0), (SidecarPhase::Idle, vec![SidecarEffect::Kill]));
-        for phase in [SidecarPhase::Off, SidecarPhase::Idle, SidecarPhase::NeedsConfig] {
+        assert_eq!(
+            step(&SidecarPhase::Idle, SidecarEvent::Spawned { port: 1 }, 0),
+            (SidecarPhase::Idle, vec![SidecarEffect::Kill])
+        );
+        for phase in [
+            SidecarPhase::Off,
+            SidecarPhase::Idle,
+            SidecarPhase::NeedsConfig,
+        ] {
             for event in [
                 SidecarEvent::Healthy,
                 SidecarEvent::DeepCheckPassed,
-                SidecarEvent::DeepCheckFailed { message: "x".into() },
-                SidecarEvent::Exited { code: Some(0), stderr_tail: String::new() },
+                SidecarEvent::DeepCheckFailed {
+                    message: "x".into(),
+                },
+                SidecarEvent::Exited {
+                    code: Some(0),
+                    stderr_tail: String::new(),
+                },
                 SidecarEvent::Used,
                 SidecarEvent::Tick,
                 SidecarEvent::SpawnFailed(SidecarFailure::HealthTimeout { after_ms: 1 }),
@@ -877,8 +1235,15 @@ mod tests {
                 assert_eq!(step(&phase, event, 0), (phase.clone(), vec![]));
             }
         }
-        let not_spawned = SidecarPhase::Starting { port: 0, attempt: 1, since_ms: 0 };
+        let not_spawned = SidecarPhase::Starting {
+            port: 0,
+            attempt: 1,
+            since_ms: 0,
+        };
         assert_eq!(step(&not_spawned, SidecarEvent::Healthy, 1).0, not_spawned);
-        assert_eq!(step(&not_spawned, SidecarEvent::Tick, u64::MAX).0, not_spawned);
+        assert_eq!(
+            step(&not_spawned, SidecarEvent::Tick, u64::MAX).0,
+            not_spawned
+        );
     }
 }

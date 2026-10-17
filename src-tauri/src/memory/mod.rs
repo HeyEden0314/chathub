@@ -129,7 +129,9 @@ impl EngineState {
         match &self.desired {
             Desired::Off => return skipped(SkipReason::MemoryOff),
             Desired::NeedsConfig(_) => return skipped(SkipReason::NeedsConfig),
-            Desired::On { targets, .. } if targets.is_empty() => return skipped(SkipReason::NoTargets),
+            Desired::On { targets, .. } if targets.is_empty() => {
+                return skipped(SkipReason::NoTargets)
+            }
             Desired::On { .. } => {}
         }
         match (&mut self.ingest, trigger) {
@@ -137,7 +139,9 @@ impl EngineState {
                 *rerun = true;
                 Err(IngestSummaryDto::Coalesced)
             }
-            (IngestWorker::Running { .. }, IngestTrigger::Sweep) => Err(IngestSummaryDto::Coalesced),
+            (IngestWorker::Running { .. }, IngestTrigger::Sweep) => {
+                Err(IngestSummaryDto::Coalesced)
+            }
             (IngestWorker::Idle, _) => {
                 self.ingest = IngestWorker::Running { rerun: false };
                 Ok(())
@@ -165,7 +169,10 @@ impl EngineState {
     }
 
     fn ledger_for(&mut self, store: &StoreId) -> Option<&mut Ledger> {
-        self.ledger.as_mut().filter(|(id, _)| id == store).map(|(_, ledger)| ledger)
+        self.ledger
+            .as_mut()
+            .filter(|(id, _)| id == store)
+            .map(|(_, ledger)| ledger)
     }
 
     fn status(&self) -> MemoryStatusDto {
@@ -215,7 +222,10 @@ impl MemoryEngine {
             state: Mutex::new(EngineState::new()),
             waiters: Notify::new(),
             // Loopback only; a user's HTTP(S)_PROXY must not capture sidecar traffic.
-            http: reqwest::Client::builder().no_proxy().build().unwrap_or_default(),
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap_or_default(),
         }
     }
 
@@ -279,7 +289,10 @@ impl MemoryEngine {
 
             let mut probes = Vec::with_capacity(ctx.targets.len());
             for target in &ctx.targets {
-                probes.push((target.clone(), probe::probe_service(app, target, now_ms()).await));
+                probes.push((
+                    target.clone(),
+                    probe::probe_service(app, target, now_ms()).await,
+                ));
             }
             let (batches, baseline_acked) = self.plan(&ctx, probes, &mut totals);
             if baseline_acked {
@@ -322,14 +335,24 @@ impl MemoryEngine {
         totals.turns_deferred = 0;
 
         let EngineState { ledger, tails, .. } = &mut *st;
-        let Some(ledger) = ledger.as_mut().filter(|(id, _)| *id == ctx.store).map(|(_, l)| l) else {
+        let Some(ledger) = ledger
+            .as_mut()
+            .filter(|(id, _)| *id == ctx.store)
+            .map(|(_, l)| l)
+        else {
             return (Vec::new(), false);
         };
         let now = now_ms();
         let mut batches = Vec::new();
         let mut baseline_acked = false;
         for snap in &snaps {
-            let plan = plan_conversation(ledger.get(&snap.conv), tails.get(&snap.conv), snap, ctx.gen, &DEFAULT_LIMITS);
+            let plan = plan_conversation(
+                ledger.get(&snap.conv),
+                tails.get(&snap.conv),
+                snap,
+                ctx.gen,
+                &DEFAULT_LIMITS,
+            );
             if let Some(tail) = plan.next_tail {
                 tails.insert(snap.conv.clone(), tail);
             }
@@ -414,20 +437,32 @@ impl MemoryEngine {
                 let status = response.status().as_u16();
                 match response.text().await {
                     Ok(body) => parse_add_response(status, &body),
-                    Err(e) => AddOutcome::Unknown { reason: e.to_string() },
+                    Err(e) => AddOutcome::Unknown {
+                        reason: e.to_string(),
+                    },
                 }
             }
-            Err(e) => AddOutcome::Unknown { reason: e.to_string() },
+            Err(e) => AddOutcome::Unknown {
+                reason: e.to_string(),
+            },
         }
     }
 
     /// THE list. Starts the sidecar on demand; nothing is cached on either side.
-    pub async fn list(&self, app: &tauri::AppHandle, query: ListQuery) -> Result<ListResultDto, String> {
+    pub async fn list(
+        &self,
+        app: &tauri::AppHandle,
+        query: ListQuery,
+    ) -> Result<ListResultDto, String> {
         if !matches!(self.lock().desired, Desired::On { .. }) {
-            return Ok(ListResultDto::Unavailable { runtime: self.status().runtime });
+            return Ok(ListResultDto::Unavailable {
+                runtime: self.status().runtime,
+            });
         }
         let Ok(port) = self.ensure_runtime(app).await else {
-            return Ok(ListResultDto::Unavailable { runtime: self.status().runtime });
+            return Ok(ListResultDto::Unavailable {
+                runtime: self.status().runtime,
+            });
         };
         let response = self
             .http
@@ -458,8 +493,15 @@ impl MemoryEngine {
             notified.as_mut().enable();
             let phase = self.lock().sidecar.clone();
             match phase {
-                SidecarPhase::Ready { port, verified: true, .. } => return Ok(port),
-                SidecarPhase::Starting { .. } | SidecarPhase::Ready { verified: false, .. } => {}
+                SidecarPhase::Ready {
+                    port,
+                    verified: true,
+                    ..
+                } => return Ok(port),
+                SidecarPhase::Starting { .. }
+                | SidecarPhase::Ready {
+                    verified: false, ..
+                } => {}
                 other => return Err(other),
             }
             let _ = tokio::time::timeout(WAITER_RECHECK, notified).await;
@@ -474,7 +516,12 @@ impl MemoryEngine {
 
     /// `guard` runs under the same lock as the transition, so a late result from
     /// a previous process or configuration is dropped instead of applied.
-    fn feed_if(&self, app: &tauri::AppHandle, event: SidecarEvent, guard: impl FnOnce(&mut EngineState) -> bool) {
+    fn feed_if(
+        &self,
+        app: &tauri::AppHandle,
+        event: SidecarEvent,
+        guard: impl FnOnce(&mut EngineState) -> bool,
+    ) {
         let effects = {
             let mut st = self.lock();
             if !guard(&mut st) {
@@ -538,7 +585,12 @@ impl MemoryEngine {
         });
     }
 
-    fn finish_spawn(&self, app: &tauri::AppHandle, seq: u64, spawned: Result<(SidecarProcess, u16), SidecarFailure>) {
+    fn finish_spawn(
+        &self,
+        app: &tauri::AppHandle,
+        seq: u64,
+        spawned: Result<(SidecarProcess, u16), SidecarFailure>,
+    ) {
         let event = {
             let mut st = self.lock();
             if st.spawn_seq != seq {
@@ -596,7 +648,15 @@ impl MemoryEngine {
     fn start_deep_check(&self, app: &tauri::AppHandle) {
         let (port, fp, already_verified) = {
             let st = self.lock();
-            let (SidecarPhase::Ready { port, verified: false, .. }, Some(fp)) = (&st.sidecar, st.runtime_fp) else {
+            let (
+                SidecarPhase::Ready {
+                    port,
+                    verified: false,
+                    ..
+                },
+                Some(fp),
+            ) = (&st.sidecar, st.runtime_fp)
+            else {
                 return;
             };
             (*port, fp, st.verified_fp == Some(fp))
@@ -634,7 +694,11 @@ impl MemoryEngine {
                     }
                     current
                 }),
-                Err(message) => engine.feed_if(&app, SidecarEvent::DeepCheckFailed { message }, |st| current(st)),
+                Err(message) => {
+                    engine.feed_if(&app, SidecarEvent::DeepCheckFailed { message }, |st| {
+                        current(st)
+                    })
+                }
             }
         });
     }
@@ -661,7 +725,9 @@ impl MemoryEngine {
             };
             (status.code(), st.process.take())
         };
-        let stderr_tail = process.map(SidecarProcess::into_exit_report).unwrap_or_default();
+        let stderr_tail = process
+            .map(SidecarProcess::into_exit_report)
+            .unwrap_or_default();
         self.feed(app, SidecarEvent::Exited { code, stderr_tail });
     }
 
@@ -674,7 +740,9 @@ impl MemoryEngine {
         if self.lock().ledger_for(store).is_some() {
             return;
         }
-        let loaded = memory_root(app).map(|root| load_ledger(&root.join(&store.0))).unwrap_or_default();
+        let loaded = memory_root(app)
+            .map(|root| load_ledger(&root.join(&store.0)))
+            .unwrap_or_default();
         let mut st = self.lock();
         if st.ledger_for(store).is_none() {
             st.ledger = Some((store.clone(), loaded));
@@ -735,18 +803,20 @@ pub fn memory_status(engine: tauri::State<'_, MemoryEngine>) -> MemoryStatusDto 
 /// off a tick is one mutex lock.
 pub fn start_sweep(app: tauri::AppHandle) {
     let ticks_per_sweep = (SWEEP_INTERVAL.as_secs() / TICK_INTERVAL.as_secs()).max(1);
-    let spawned = std::thread::Builder::new().name("anychat-memory-sweep".into()).spawn(move || {
-        let mut ticks = 0u64;
-        loop {
-            std::thread::sleep(TICK_INTERVAL);
-            ticks += 1;
-            let engine = app.state::<MemoryEngine>();
-            if ticks % ticks_per_sweep == 0 {
-                tauri::async_runtime::block_on(engine.ingest(&app, IngestTrigger::Sweep));
+    let spawned = std::thread::Builder::new()
+        .name("anychat-memory-sweep".into())
+        .spawn(move || {
+            let mut ticks = 0u64;
+            loop {
+                std::thread::sleep(TICK_INTERVAL);
+                ticks += 1;
+                let engine = app.state::<MemoryEngine>();
+                if ticks % ticks_per_sweep == 0 {
+                    tauri::async_runtime::block_on(engine.ingest(&app, IngestTrigger::Sweep));
+                }
+                engine.tick(&app);
             }
-            engine.tick(&app);
-        }
-    });
+        });
     if let Err(e) = spawned {
         eprintln!("[AnyChat] memory sweep failed to start: {e}");
     }
@@ -777,7 +847,9 @@ fn sidecar_url(port: u16, path: &str) -> String {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// Missing or unreadable ⇒ empty. Worst case is re-sending up to
@@ -838,22 +910,37 @@ mod tests {
 
     #[test]
     fn ingest_gate_skips_until_memory_has_targets() {
-        assert_eq!(state_with(Desired::Off).begin_ingest(IngestTrigger::Command), skipped(SkipReason::MemoryOff));
+        assert_eq!(
+            state_with(Desired::Off).begin_ingest(IngestTrigger::Command),
+            skipped(SkipReason::MemoryOff)
+        );
         assert_eq!(
             state_with(Desired::NeedsConfig(vec![])).begin_ingest(IngestTrigger::Sweep),
             skipped(SkipReason::NeedsConfig)
         );
-        assert_eq!(state_with(desired(&[])).begin_ingest(IngestTrigger::Command), skipped(SkipReason::NoTargets));
-        assert_eq!(state_with(desired(&["chatgpt"])).begin_ingest(IngestTrigger::Command), Ok(()));
+        assert_eq!(
+            state_with(desired(&[])).begin_ingest(IngestTrigger::Command),
+            skipped(SkipReason::NoTargets)
+        );
+        assert_eq!(
+            state_with(desired(&["chatgpt"])).begin_ingest(IngestTrigger::Command),
+            Ok(())
+        );
     }
 
     #[test]
     fn ingest_is_single_flight_and_only_commands_ask_for_a_rerun() {
         let mut st = state_with(desired(&["chatgpt"]));
         assert_eq!(st.begin_ingest(IngestTrigger::Sweep), Ok(()));
-        assert_eq!(st.begin_ingest(IngestTrigger::Sweep), Err(IngestSummaryDto::Coalesced));
+        assert_eq!(
+            st.begin_ingest(IngestTrigger::Sweep),
+            Err(IngestSummaryDto::Coalesced)
+        );
         assert!(!st.take_rerun());
-        assert_eq!(st.begin_ingest(IngestTrigger::Command), Err(IngestSummaryDto::Coalesced));
+        assert_eq!(
+            st.begin_ingest(IngestTrigger::Command),
+            Err(IngestSummaryDto::Coalesced)
+        );
         assert!(st.take_rerun());
         assert!(!st.take_rerun(), "a rerun request is consumed once");
     }
@@ -861,9 +948,19 @@ mod tests {
     #[test]
     fn runtime_dto_hides_unverified_ready_and_never_the_key() {
         let on = desired(&["chatgpt"]);
-        let ready = |verified| SidecarPhase::Ready { port: 1, last_used_ms: 0, verified };
-        assert_eq!(runtime_dto(&Desired::Off, &ready(true)), RuntimePhaseDto::Off);
-        assert!(matches!(runtime_dto(&on, &ready(false)), RuntimePhaseDto::Starting { .. }));
+        let ready = |verified| SidecarPhase::Ready {
+            port: 1,
+            last_used_ms: 0,
+            verified,
+        };
+        assert_eq!(
+            runtime_dto(&Desired::Off, &ready(true)),
+            RuntimePhaseDto::Off
+        );
+        assert!(matches!(
+            runtime_dto(&on, &ready(false)),
+            RuntimePhaseDto::Starting { .. }
+        ));
         let RuntimePhaseDto::Ready { applied } = runtime_dto(&on, &ready(true)) else {
             panic!("expected ready");
         };
@@ -872,17 +969,25 @@ mod tests {
         assert!(applied.store_id.starts_with("text-embedding-3-small-1536-"));
         let json = serde_json::to_string(&runtime_dto(&on, &ready(true))).unwrap();
         assert!(!json.contains("sk-test"));
-        assert!(matches!(runtime_dto(&on, &SidecarPhase::Idle), RuntimePhaseDto::Idle { .. }));
+        assert!(matches!(
+            runtime_dto(&on, &SidecarPhase::Idle),
+            RuntimePhaseDto::Idle { .. }
+        ));
     }
 
     #[test]
     fn failures_serialize_with_kebab_kinds_and_install_hint() {
-        let dto = SidecarFailureDto::from(&SidecarFailure::ModuleMissing { python: "python3".into() });
+        let dto = SidecarFailureDto::from(&SidecarFailure::ModuleMissing {
+            python: "python3".into(),
+        });
         assert_eq!(
             serde_json::to_value(dto).unwrap(),
             json!({"kind": "module-missing", "python": "python3", "installHint": "python3 -m pip install hy-memory==2.0.3"})
         );
-        let dto = SidecarFailureDto::from(&SidecarFailure::ExitedOnStart { code: Some(1), stderr_tail: "x".into() });
+        let dto = SidecarFailureDto::from(&SidecarFailure::ExitedOnStart {
+            code: Some(1),
+            stderr_tail: "x".into(),
+        });
         assert_eq!(
             serde_json::to_value(dto).unwrap(),
             json!({"kind": "exited-on-start", "code": 1, "stderrTail": "x"})
@@ -892,24 +997,45 @@ mod tests {
     #[test]
     fn status_lists_probes_only_for_current_targets() {
         let mut st = state_with(desired(&["chatgpt"]));
-        st.probes.insert(ServiceId("chatgpt".into()), ProbeResult::NoConversation);
-        st.probes.insert(ServiceId("claude".into()), ProbeResult::NotOpen);
+        st.probes
+            .insert(ServiceId("chatgpt".into()), ProbeResult::NoConversation);
+        st.probes
+            .insert(ServiceId("claude".into()), ProbeResult::NotOpen);
         let status = serde_json::to_value(st.status()).unwrap();
-        assert_eq!(status["probes"], json!({"chatgpt": {"kind": "no-conversation"}}));
-        assert_eq!(status["ingest"], json!({"state": "idle", "lastRun": null, "abandonedTurns": 0}));
+        assert_eq!(
+            status["probes"],
+            json!({"chatgpt": {"kind": "no-conversation"}})
+        );
+        assert_eq!(
+            status["ingest"],
+            json!({"state": "idle", "lastRun": null, "abandonedTurns": 0})
+        );
         assert_eq!(status["runtime"]["phase"], "idle");
-        assert!(status["supportedHosts"].as_array().unwrap().contains(&Value::from("claude.ai")));
+        assert!(status["supportedHosts"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from("claude.ai")));
     }
 
     #[test]
     fn list_query_dto_maps_blank_service_to_all() {
-        let q: ListQuery = serde_json::from_value::<ListQueryDto>(json!({"serviceId": " ", "offset": 50}))
-            .unwrap()
-            .into();
-        assert_eq!(q, ListQuery { service_id: None, offset: 50, limit: 50 });
-        let q: ListQuery = serde_json::from_value::<ListQueryDto>(json!({"serviceId": "claude", "offset": 0, "limit": 10}))
-            .unwrap()
-            .into();
+        let q: ListQuery =
+            serde_json::from_value::<ListQueryDto>(json!({"serviceId": " ", "offset": 50}))
+                .unwrap()
+                .into();
+        assert_eq!(
+            q,
+            ListQuery {
+                service_id: None,
+                offset: 50,
+                limit: 50
+            }
+        );
+        let q: ListQuery = serde_json::from_value::<ListQueryDto>(
+            json!({"serviceId": "claude", "offset": 0, "limit": 10}),
+        )
+        .unwrap()
+        .into();
         assert_eq!(q.service_id, Some(ServiceId("claude".into())));
     }
 
@@ -919,15 +1045,27 @@ mod tests {
         assert_eq!(load_ledger(&dir), Ledger::default());
 
         let mut ledger = Ledger::default();
-        let conv = ConvRef { service: ServiceId("chatgpt".into()), conversation: ConversationKey("c1".into()) };
-        apply_change(&mut ledger, &conv, &LedgerChange::Ack(vec![Fingerprint(7)]), 1);
+        let conv = ConvRef {
+            service: ServiceId("chatgpt".into()),
+            conversation: ConversationKey("c1".into()),
+        };
+        apply_change(
+            &mut ledger,
+            &conv,
+            &LedgerChange::Ack(vec![Fingerprint(7)]),
+            1,
+        );
         write_ledger_atomic(&dir, &ledger).unwrap();
         assert_eq!(load_ledger(&dir), ledger);
         assert!(!dir.join("ledger.json.tmp").exists());
 
         fs::write(dir.join(LEDGER_FILE), b"{not json").unwrap();
         assert_eq!(load_ledger(&dir), Ledger::default());
-        fs::write(dir.join(LEDGER_FILE), br#"{"version": 99, "conversations": {}}"#).unwrap();
+        fs::write(
+            dir.join(LEDGER_FILE),
+            br#"{"version": 99, "conversations": {}}"#,
+        )
+        .unwrap();
         assert_eq!(load_ledger(&dir), Ledger::default());
     }
 }

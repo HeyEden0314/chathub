@@ -53,12 +53,36 @@ fn state(desired: Desired, sidecar: SidecarPhase) -> EngineState {
 fn statuses() -> Vec<MemoryStatusDto> {
     let mut out = vec![
         state(Desired::Off, SidecarPhase::Off).status(),
-        state(desired(serde_json::json!({ "enabled": true }), &[]), SidecarPhase::NeedsConfig).status(),
-        state(configured(&["chatgpt"]), SidecarPhase::Starting { port: 0, attempt: 1, since_ms: AT }).status(),
-        state(configured(&["chatgpt"]), SidecarPhase::Ready { port: 41_000, last_used_ms: AT, verified: true }).status(),
+        state(
+            desired(serde_json::json!({ "enabled": true }), &[]),
+            SidecarPhase::NeedsConfig,
+        )
+        .status(),
         state(
             configured(&["chatgpt"]),
-            SidecarPhase::Backoff { attempt: 2, until_ms: AT + 4_000, last_exit: "exit code 1".into() },
+            SidecarPhase::Starting {
+                port: 0,
+                attempt: 1,
+                since_ms: AT,
+            },
+        )
+        .status(),
+        state(
+            configured(&["chatgpt"]),
+            SidecarPhase::Ready {
+                port: 41_000,
+                last_used_ms: AT,
+                verified: true,
+            },
+        )
+        .status(),
+        state(
+            configured(&["chatgpt"]),
+            SidecarPhase::Backoff {
+                attempt: 2,
+                until_ms: AT + 4_000,
+                last_exit: "exit code 1".into(),
+            },
         )
         .status(),
     ];
@@ -66,26 +90,51 @@ fn statuses() -> Vec<MemoryStatusDto> {
     let probed = ["chatgpt", "claude", "gemini", "deepseek", "grok", "poe"];
     let mut idle = state(configured(&probed), SidecarPhase::Idle);
     idle.ingest = IngestWorker::Running { rerun: false };
-    idle.last_ingest = Some(RunTotals { conversations_probed: 2, batches_stored: 1, ..Default::default() }.summary(AT));
+    idle.last_ingest = Some(
+        RunTotals {
+            conversations_probed: 2,
+            batches_stored: 1,
+            ..Default::default()
+        }
+        .summary(AT),
+    );
     for (id, result) in probed.iter().zip([
         ProbeResult::Page(snap(dialogue(4), Some(false), AT)),
         ProbeResult::NotOpen,
         ProbeResult::NoConversation,
-        ProbeResult::UnsupportedSite { host: "chat.deepseek.com".into() },
-        ProbeResult::UnrecognizedPage { conversation: ConversationKey("c-42".into()) },
-        ProbeResult::Failed { message: "evaluate timed out".into() },
+        ProbeResult::UnsupportedSite {
+            host: "chat.deepseek.com".into(),
+        },
+        ProbeResult::UnrecognizedPage {
+            conversation: ConversationKey("c-42".into()),
+        },
+        ProbeResult::Failed {
+            message: "evaluate timed out".into(),
+        },
     ]) {
         idle.probes.insert(ServiceId(id.to_string()), result);
     }
     out.push(idle.status());
 
     for failure in [
-        SidecarFailure::PythonNotFound { tried: vec!["python3".into(), "python".into()] },
-        SidecarFailure::ModuleMissing { python: "python3".into() },
-        SidecarFailure::ExitedOnStart { code: Some(1), stderr_tail: "Traceback: kuzu lock held".into() },
+        SidecarFailure::PythonNotFound {
+            tried: vec!["python3".into(), "python".into()],
+        },
+        SidecarFailure::ModuleMissing {
+            python: "python3".into(),
+        },
+        SidecarFailure::ExitedOnStart {
+            code: Some(1),
+            stderr_tail: "Traceback: kuzu lock held".into(),
+        },
         SidecarFailure::HealthTimeout { after_ms: 60_000 },
-        SidecarFailure::ModelCheckFailed { message: "llm: error: 401 Unauthorized".into() },
-        SidecarFailure::CrashLoop { restarts: 3, stderr_tail: "Segmentation fault".into() },
+        SidecarFailure::ModelCheckFailed {
+            message: "llm: error: 401 Unauthorized".into(),
+        },
+        SidecarFailure::CrashLoop {
+            restarts: 3,
+            stderr_tail: "Segmentation fault".into(),
+        },
     ] {
         out.push(state(configured(&["chatgpt"]), SidecarPhase::Failed(failure)).status());
     }
@@ -93,14 +142,20 @@ fn statuses() -> Vec<MemoryStatusDto> {
 }
 
 fn ingest_summaries() -> Vec<IngestSummaryDto> {
-    let skipped = |desired: Desired| state(desired, SidecarPhase::Off).begin_ingest(IngestTrigger::Command).unwrap_err();
+    let skipped = |desired: Desired| {
+        state(desired, SidecarPhase::Off)
+            .begin_ingest(IngestTrigger::Command)
+            .unwrap_err()
+    };
     let mut busy = state(configured(&["chatgpt"]), SidecarPhase::Idle);
     busy.ingest = IngestWorker::Running { rerun: false };
     vec![
         skipped(Desired::Off),
         skipped(desired(serde_json::json!({ "enabled": true }), &[])),
         skipped(configured(&[])),
-        IngestSummaryDto::Skipped { reason: SkipReason::RuntimeFailed },
+        IngestSummaryDto::Skipped {
+            reason: SkipReason::RuntimeFailed,
+        },
         busy.begin_ingest(IngestTrigger::Command).unwrap_err(),
         RunTotals {
             conversations_probed: 2,
@@ -125,11 +180,22 @@ const LIST_BODY: &str = r#"{"vdb": {"memories": [
 ], "total": 120, "limit": 50, "offset": 0}}"#;
 
 fn list_results() -> Vec<ListResultDto> {
-    let query = ListQuery { service_id: None, offset: 0, limit: 50 };
+    let query = ListQuery {
+        service_id: None,
+        offset: 0,
+        limit: 50,
+    };
     let page = parse_list_response(LIST_BODY, &query).unwrap();
     vec![
-        ListResultDto::Page { items: page.items, total: page.total, next_offset: page.next_offset, dropped: page.dropped },
-        ListResultDto::Unavailable { runtime: runtime_dto(&Desired::Off, &SidecarPhase::Off) },
+        ListResultDto::Page {
+            items: page.items,
+            total: page.total,
+            next_offset: page.next_offset,
+            dropped: page.dropped,
+        },
+        ListResultDto::Unavailable {
+            runtime: runtime_dto(&Desired::Off, &SidecarPhase::Off),
+        },
     ]
 }
 
@@ -151,7 +217,10 @@ fn render() -> String {
 #[test]
 fn generated_ts_contract_is_current() {
     let rendered = render();
-    assert!(!rendered.contains("sk-never-serialized"), "an API key reached a read model");
+    assert!(
+        !rendered.contains("sk-never-serialized"),
+        "an API key reached a read model"
+    );
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(GENERATED);
     if std::env::var_os("UPDATE_MEMORY_CONTRACT").is_some() {
         fs::write(&path, &rendered).unwrap();

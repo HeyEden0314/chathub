@@ -180,7 +180,10 @@ fn default_list_limit() -> u32 {
 impl From<ListQueryDto> for ListQuery {
     fn from(q: ListQueryDto) -> Self {
         ListQuery {
-            service_id: q.service_id.filter(|id| !id.trim().is_empty()).map(ServiceId),
+            service_id: q
+                .service_id
+                .filter(|id| !id.trim().is_empty())
+                .map(ServiceId),
             offset: q.offset,
             limit: q.limit,
         }
@@ -204,10 +207,18 @@ impl From<&SidecarFailure> for SidecarFailureDto {
                 install_hint: install_hint(&python),
                 python,
             },
-            SidecarFailure::ExitedOnStart { code, stderr_tail } => Self::ExitedOnStart { code, stderr_tail },
+            SidecarFailure::ExitedOnStart { code, stderr_tail } => {
+                Self::ExitedOnStart { code, stderr_tail }
+            }
             SidecarFailure::HealthTimeout { after_ms } => Self::HealthTimeout { after_ms },
             SidecarFailure::ModelCheckFailed { message } => Self::ModelCheckFailed { message },
-            SidecarFailure::CrashLoop { restarts, stderr_tail } => Self::CrashLoop { restarts, stderr_tail },
+            SidecarFailure::CrashLoop {
+                restarts,
+                stderr_tail,
+            } => Self::CrashLoop {
+                restarts,
+                stderr_tail,
+            },
         }
     }
 }
@@ -225,10 +236,13 @@ pub(super) fn runtime_dto(desired: &Desired, phase: &SidecarPhase) -> RuntimePha
     };
     let applied = applied_of(config);
     match phase {
-        SidecarPhase::Off | SidecarPhase::NeedsConfig | SidecarPhase::Idle => RuntimePhaseDto::Idle { applied },
-        SidecarPhase::Starting { .. } | SidecarPhase::Ready { verified: false, .. } => {
-            RuntimePhaseDto::Starting { applied }
+        SidecarPhase::Off | SidecarPhase::NeedsConfig | SidecarPhase::Idle => {
+            RuntimePhaseDto::Idle { applied }
         }
+        SidecarPhase::Starting { .. }
+        | SidecarPhase::Ready {
+            verified: false, ..
+        } => RuntimePhaseDto::Starting { applied },
         SidecarPhase::Ready { verified: true, .. } => RuntimePhaseDto::Ready { applied },
         SidecarPhase::Backoff {
             attempt,

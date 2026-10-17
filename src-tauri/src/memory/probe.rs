@@ -5,17 +5,29 @@ use serde::Serialize;
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
 use std::time::Duration;
 
-use super::model::{parse_probe_payload, ProbeResult, ServiceId, EVAL_TIMEOUT, MAX_TURNS_PER_PROBE};
+use super::model::{
+    parse_probe_payload, ProbeResult, ServiceId, EVAL_TIMEOUT, MAX_TURNS_PER_PROBE,
+};
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RoleRule {
     /// e.g. ChatGPT `data-message-author-role="user|assistant"`.
-    Attribute { name: &'static str, user: &'static str, assistant: &'static str },
+    Attribute {
+        name: &'static str,
+        user: &'static str,
+        assistant: &'static str,
+    },
     /// Node matches `user` selector ⇒ User; matches `assistant` ⇒ Assistant.
-    Selector { user: &'static str, assistant: &'static str },
+    Selector {
+        user: &'static str,
+        assistant: &'static str,
+    },
     /// Custom elements, e.g. Gemini `user-query` / `model-response`.
-    TagName { user: &'static str, assistant: &'static str },
+    TagName {
+        user: &'static str,
+        assistant: &'static str,
+    },
 }
 
 /// Serialized as the `spec` argument of `PROBE_JS`.
@@ -46,7 +58,11 @@ pub static EXTRACTORS: &[ExtractorSpec] = &[
         hosts: &["chatgpt.com", "chat.openai.com"],
         conversation_path: r"/c/([0-9a-f-]{16,})",
         turn_selector: "[data-message-author-role]",
-        role: RoleRule::Attribute { name: "data-message-author-role", user: "user", assistant: "assistant" },
+        role: RoleRule::Attribute {
+            name: "data-message-author-role",
+            user: "user",
+            assistant: "assistant",
+        },
         text_selector: None,
         streaming_selector: Some("[data-testid='stop-button']"),
     },
@@ -55,7 +71,10 @@ pub static EXTRACTORS: &[ExtractorSpec] = &[
         hosts: &["claude.ai"],
         conversation_path: r"^/chat/([0-9a-f-]{16,})",
         turn_selector: "[data-testid='user-message'], [data-is-streaming]",
-        role: RoleRule::Selector { user: "[data-testid='user-message']", assistant: "[data-is-streaming]" },
+        role: RoleRule::Selector {
+            user: "[data-testid='user-message']",
+            assistant: "[data-is-streaming]",
+        },
         text_selector: None,
         streaming_selector: Some("[data-is-streaming='true']"),
     },
@@ -64,14 +83,20 @@ pub static EXTRACTORS: &[ExtractorSpec] = &[
         hosts: &["gemini.google.com"],
         conversation_path: r"^/app/([0-9a-f]{8,})",
         turn_selector: "user-query, model-response",
-        role: RoleRule::TagName { user: "user-query", assistant: "model-response" },
+        role: RoleRule::TagName {
+            user: "user-query",
+            assistant: "model-response",
+        },
         text_selector: None,
         streaming_selector: None,
     },
 ];
 
 pub fn supported_hosts() -> Vec<&'static str> {
-    EXTRACTORS.iter().flat_map(|spec| spec.hosts.iter().copied()).collect()
+    EXTRACTORS
+        .iter()
+        .flat_map(|spec| spec.hosts.iter().copied())
+        .collect()
 }
 
 pub fn spec_for_url(url: &tauri::Url) -> Option<&'static ExtractorSpec> {
@@ -131,24 +156,40 @@ pub fn probe_script(spec: &ExtractorSpec) -> String {
 }
 
 /// Never call on the main thread: `with_webview` dispatches to it and this waits.
-pub async fn probe_service(app: &tauri::AppHandle, service: &ServiceId, now_ms: u64) -> ProbeResult {
+pub async fn probe_service(
+    app: &tauri::AppHandle,
+    service: &ServiceId,
+    now_ms: u64,
+) -> ProbeResult {
     let Some(webview) = crate::live_service_webview(app, &service.0) else {
         return ProbeResult::NotOpen;
     };
     let url = match webview.url() {
         Ok(url) => url,
-        Err(e) => return ProbeResult::Failed { message: e.to_string() },
+        Err(e) => {
+            return ProbeResult::Failed {
+                message: e.to_string(),
+            }
+        }
     };
     let Some(spec) = spec_for_url(&url) else {
-        return ProbeResult::UnsupportedSite { host: url.host_str().unwrap_or_default().to_string() };
+        return ProbeResult::UnsupportedSite {
+            host: url.host_str().unwrap_or_default().to_string(),
+        };
     };
     let script = probe_script(spec);
-    let evaluated =
-        tauri::async_runtime::spawn_blocking(move || eval_with_result(&webview, script, EVAL_TIMEOUT)).await;
+    let evaluated = tauri::async_runtime::spawn_blocking(move || {
+        eval_with_result(&webview, script, EVAL_TIMEOUT)
+    })
+    .await;
     match evaluated {
         Ok(Ok(json)) => parse_probe_payload(service, &json, now_ms),
-        Ok(Err(e)) => ProbeResult::Failed { message: e.message() },
-        Err(e) => ProbeResult::Failed { message: e.to_string() },
+        Ok(Err(e)) => ProbeResult::Failed {
+            message: e.message(),
+        },
+        Err(e) => ProbeResult::Failed {
+            message: e.to_string(),
+        },
     }
 }
 
@@ -176,7 +217,11 @@ impl EvalError {
 
 /// Tauri 2.9 exposes only fire-and-forget `eval`, so reach the engine through
 /// `Webview::with_webview`, which runs the closure on the main thread.
-fn eval_with_result(webview: &tauri::Webview, js: String, timeout: Duration) -> Result<String, EvalError> {
+fn eval_with_result(
+    webview: &tauri::Webview,
+    js: String,
+    timeout: Duration,
+) -> Result<String, EvalError> {
     let (tx, rx) = sync_channel(1);
     webview
         .with_webview(move |pw| platform::evaluate(pw, &js, move |r| drop(tx.send(r))))
@@ -184,7 +229,9 @@ fn eval_with_result(webview: &tauri::Webview, js: String, timeout: Duration) -> 
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
         Err(RecvTimeoutError::Timeout) => Err(EvalError::Timeout),
-        Err(RecvTimeoutError::Disconnected) => Err(EvalError::WebviewGone("closed during probe".to_string())),
+        Err(RecvTimeoutError::Disconnected) => {
+            Err(EvalError::WebviewGone("closed during probe".to_string()))
+        }
     }
 }
 
@@ -210,13 +257,19 @@ mod platform {
         js: &str,
         done: impl FnOnce(Result<String, EvalError>) + 'static,
     ) {
-        webview.evaluate_javascript(js, Some(WORLD), None, None::<&webkit2gtk::gio::Cancellable>, move |result| {
-            done(match result {
-                Ok(value) if value.is_string() => Ok(value.to_str().to_string()),
-                Ok(_) => Err(EvalError::Engine("probe returned a non-string".to_string())),
-                Err(e) => Err(EvalError::Engine(e.to_string())),
-            })
-        });
+        webview.evaluate_javascript(
+            js,
+            Some(WORLD),
+            None,
+            None::<&webkit2gtk::gio::Cancellable>,
+            move |result| {
+                done(match result {
+                    Ok(value) if value.is_string() => Ok(value.to_str().to_string()),
+                    Ok(_) => Err(EvalError::Engine("probe returned a non-string".to_string())),
+                    Err(e) => Err(EvalError::Engine(e.to_string())),
+                })
+            },
+        );
     }
 }
 
@@ -238,8 +291,15 @@ mod tests {
     use super::*;
     use regex::Regex;
 
-    const BANNED: &[&str] =
-        &["fetch(", "XMLHttpRequest", "WebSocket", "__TAURI__", "anychat://", "sendBeacon", "new Image"];
+    const BANNED: &[&str] = &[
+        "fetch(",
+        "XMLHttpRequest",
+        "WebSocket",
+        "__TAURI__",
+        "anychat://",
+        "sendBeacon",
+        "new Image",
+    ];
 
     fn squeeze(s: &str) -> String {
         s.chars().filter(|c| !c.is_whitespace()).collect()
@@ -261,7 +321,12 @@ mod tests {
     #[test]
     fn probe_script_opens_no_channel_out_of_the_page() {
         for spec in EXTRACTORS {
-            assert_eq!(banned_tokens(&probe_script(spec)), Vec::<&str>::new(), "{} probe", spec.id);
+            assert_eq!(
+                banned_tokens(&probe_script(spec)),
+                Vec::<&str>::new(),
+                "{} probe",
+                spec.id
+            );
         }
     }
 
@@ -282,10 +347,19 @@ mod tests {
         let spec_json: serde_json::Value = serde_json::to_value(spec("chatgpt")).unwrap();
         assert_eq!(spec_json["conversationPath"], r"/c/([0-9a-f-]{16,})");
         assert_eq!(spec_json["role"]["kind"], "attribute");
-        assert_eq!(spec_json["streamingSelector"], "[data-testid='stop-button']");
+        assert_eq!(
+            spec_json["streamingSelector"],
+            "[data-testid='stop-button']"
+        );
         assert!(spec_json.get("hosts").is_none());
-        assert_eq!(serde_json::to_value(spec("gemini")).unwrap()["role"]["kind"], "tagName");
-        assert_eq!(serde_json::to_value(spec("claude")).unwrap()["role"]["kind"], "selector");
+        assert_eq!(
+            serde_json::to_value(spec("gemini")).unwrap()["role"]["kind"],
+            "tagName"
+        );
+        assert_eq!(
+            serde_json::to_value(spec("claude")).unwrap()["role"]["kind"],
+            "selector"
+        );
     }
 
     #[test]
@@ -304,27 +378,58 @@ mod tests {
 
     #[test]
     fn supported_hosts_lists_every_extractor_host() {
-        assert_eq!(supported_hosts(), vec!["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"]);
+        assert_eq!(
+            supported_hosts(),
+            vec![
+                "chatgpt.com",
+                "chat.openai.com",
+                "claude.ai",
+                "gemini.google.com"
+            ]
+        );
     }
 
     #[test]
     fn conversation_paths_capture_the_key() {
         for (id, path, key) in [
-            ("chatgpt", "/c/6801b2b4-1c2c-8000-9d3e-0a1b2c3d4e5f", "6801b2b4-1c2c-8000-9d3e-0a1b2c3d4e5f"),
-            ("chatgpt", "/g/g-abc/c/6801b2b4-1c2c-8000", "6801b2b4-1c2c-8000"),
-            ("claude", "/chat/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"),
+            (
+                "chatgpt",
+                "/c/6801b2b4-1c2c-8000-9d3e-0a1b2c3d4e5f",
+                "6801b2b4-1c2c-8000-9d3e-0a1b2c3d4e5f",
+            ),
+            (
+                "chatgpt",
+                "/g/g-abc/c/6801b2b4-1c2c-8000",
+                "6801b2b4-1c2c-8000",
+            ),
+            (
+                "claude",
+                "/chat/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+                "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+            ),
             ("gemini", "/app/1a2b3c4d5e6f7a8b", "1a2b3c4d5e6f7a8b"),
         ] {
             let re = Regex::new(spec(id).conversation_path).unwrap();
-            assert_eq!(re.captures(path).map(|c| c[1].to_string()), Some(key.to_string()), "{id} {path}");
+            assert_eq!(
+                re.captures(path).map(|c| c[1].to_string()),
+                Some(key.to_string()),
+                "{id} {path}"
+            );
         }
-        assert!(!Regex::new(spec("claude").conversation_path).unwrap().is_match("/new"));
-        assert!(!Regex::new(spec("gemini").conversation_path).unwrap().is_match("/app"));
+        assert!(!Regex::new(spec("claude").conversation_path)
+            .unwrap()
+            .is_match("/new"));
+        assert!(!Regex::new(spec("gemini").conversation_path)
+            .unwrap()
+            .is_match("/app"));
     }
 
     #[test]
     fn eval_errors_have_stable_messages() {
-        assert_eq!(EvalError::UnsupportedPlatform.message(), "unsupported-platform");
+        assert_eq!(
+            EvalError::UnsupportedPlatform.message(),
+            "unsupported-platform"
+        );
         assert_eq!(EvalError::Timeout.message(), "probe timeout");
     }
 }
@@ -345,7 +450,8 @@ mod linux_fixture {
     use std::time::Instant;
     use webkit2gtk::{LoadEvent, WebViewExt};
 
-    const STRICT_CSP: &str = "default-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; \
+    const STRICT_CSP: &str =
+        "default-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; \
                               frame-src 'none'; require-trusted-types-for 'script'";
 
     fn page(body: &str) -> String {
@@ -450,7 +556,11 @@ mod linux_fixture {
 
     fn page_snapshot(webview: &webkit2gtk::WebView, base: &str, path: &str, id: &str) -> Snapshot {
         load(webview, &format!("{base}{path}"));
-        assert_eq!(evaluate(webview, "document.title").unwrap(), "fixture", "page script must be blocked by CSP");
+        assert_eq!(
+            evaluate(webview, "document.title").unwrap(),
+            "fixture",
+            "page script must be blocked by CSP"
+        );
         let json = evaluate(webview, &probe_script(spec(id))).unwrap();
         match parse_probe_payload(&ServiceId(id.to_string()), &json, 1) {
             ProbeResult::Page(s) => s,
@@ -463,7 +573,10 @@ mod linux_fixture {
     }
 
     fn turn(role: Role, text: &str) -> ObservedTurn {
-        ObservedTurn { role, text: text.to_string() }
+        ObservedTurn {
+            role,
+            text: text.to_string(),
+        }
     }
 
     #[test]
@@ -498,11 +611,20 @@ mod linux_fixture {
         assert_eq!(s.streaming, Some(true));
 
         let s = page_snapshot(&webview, &base, "/app/1a2b3c4d5e6f", "gemini");
-        assert_eq!(s.turns, vec![turn(Role::User, "gemini question"), turn(Role::Assistant, "gemini answer")]);
+        assert_eq!(
+            s.turns,
+            vec![
+                turn(Role::User, "gemini question"),
+                turn(Role::Assistant, "gemini answer")
+            ]
+        );
         assert_eq!(s.streaming, None);
 
         let json = evaluate(&webview, &probe_script(spec("chatgpt"))).unwrap();
-        assert_eq!(parse_probe_payload(&ServiceId("chatgpt".into()), &json, 1), ProbeResult::NoConversation);
+        assert_eq!(
+            parse_probe_payload(&ServiceId("chatgpt".into()), &json, 1),
+            ProbeResult::NoConversation
+        );
 
         assert_eq!(
             evaluate(&webview, "1 + 1"),
@@ -511,8 +633,14 @@ mod linux_fixture {
 
         let tamper = "window.__pageGlobal = 'page'; JSON.stringify = function () { return 'tampered'; }; 'set'";
         assert_eq!(evaluate_in_main_world(&webview, tamper), "set");
-        assert_eq!(evaluate_in_main_world(&webview, "JSON.stringify({})"), "tampered");
-        assert_eq!(evaluate(&webview, "typeof window.__pageGlobal").unwrap(), "undefined");
+        assert_eq!(
+            evaluate_in_main_world(&webview, "JSON.stringify({})"),
+            "tampered"
+        );
+        assert_eq!(
+            evaluate(&webview, "typeof window.__pageGlobal").unwrap(),
+            "undefined"
+        );
         let json = evaluate(&webview, &probe_script(spec("gemini"))).unwrap();
         assert!(matches!(
             parse_probe_payload(&ServiceId("gemini".into()), &json, 1),
@@ -523,9 +651,16 @@ mod linux_fixture {
     fn evaluate_in_main_world(webview: &webkit2gtk::WebView, js: &str) -> String {
         let slot = Rc::new(RefCell::new(None));
         let sink = slot.clone();
-        webview.evaluate_javascript(js, None, None, None::<&webkit2gtk::gio::Cancellable>, move |r| {
-            *sink.borrow_mut() = Some(r.map(|v| v.to_str().to_string()).map_err(|e| e.to_string()));
-        });
+        webview.evaluate_javascript(
+            js,
+            None,
+            None,
+            None::<&webkit2gtk::gio::Cancellable>,
+            move |r| {
+                *sink.borrow_mut() =
+                    Some(r.map(|v| v.to_str().to_string()).map_err(|e| e.to_string()));
+            },
+        );
         pump_until("main-world evaluate", || slot.borrow().is_some());
         let result = slot.borrow_mut().take().unwrap();
         result.unwrap()

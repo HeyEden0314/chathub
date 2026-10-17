@@ -41,7 +41,11 @@ impl SidecarProcess {
 
     fn stderr_tail(&self) -> String {
         let lines = self.stderr.lock().unwrap_or_else(|e| e.into_inner());
-        let joined = lines.iter().map(String::as_str).collect::<Vec<_>>().join("\n");
+        let joined = lines
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("\n");
         let skip = joined.chars().count().saturating_sub(STDERR_TAIL_CHARS);
         joined.chars().skip(skip).collect()
     }
@@ -70,10 +74,17 @@ impl SidecarProcess {
 
 /// Reap a stale sidecar, find an interpreter that can import `hy_memory`, pick a
 /// free loopback port, and start `python -m hy_memory.server` in the store dir.
-pub fn spawn(cfg: &RuntimeConfig, store_dir: &Path, pid_file: &Path) -> Result<(SidecarProcess, u16), SidecarFailure> {
+pub fn spawn(
+    cfg: &RuntimeConfig,
+    store_dir: &Path,
+    pid_file: &Path,
+) -> Result<(SidecarProcess, u16), SidecarFailure> {
     reap_stale(pid_file);
     let python = find_python(cfg)?;
-    let start_error = |e: std::io::Error| SidecarFailure::ExitedOnStart { code: None, stderr_tail: e.to_string() };
+    let start_error = |e: std::io::Error| SidecarFailure::ExitedOnStart {
+        code: None,
+        stderr_tail: e.to_string(),
+    };
 
     fs::create_dir_all(store_dir.join("hy")).map_err(start_error)?;
     let port = TcpListener::bind("127.0.0.1:0")
@@ -82,13 +93,24 @@ pub fn spawn(cfg: &RuntimeConfig, store_dir: &Path, pid_file: &Path) -> Result<(
         .map_err(start_error)?;
 
     let plan = sidecar_env(cfg, port, store_dir);
-    let mut cmd = python_command(&python, plan.remove_prefixes, std::env::vars_os().map(|(k, _)| k));
-    cmd.args(["-m", "hy_memory.server", "--host", "127.0.0.1", "--port", &port.to_string()])
-        .envs(plan.set)
-        .current_dir(&plan.cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+    let mut cmd = python_command(
+        &python,
+        plan.remove_prefixes,
+        std::env::vars_os().map(|(k, _)| k),
+    );
+    cmd.args([
+        "-m",
+        "hy_memory.server",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+    ])
+    .envs(plan.set)
+    .current_dir(&plan.cwd)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(start_error)?;
 
     let stderr = Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_LINES)));
@@ -108,7 +130,15 @@ pub fn spawn(cfg: &RuntimeConfig, store_dir: &Path, pid_file: &Path) -> Result<(
         let _ = fs::create_dir_all(dir);
     }
     let _ = fs::write(pid_file, child.id().to_string());
-    Ok((SidecarProcess { child, stderr, reader, pid_file: pid_file.to_path_buf() }, port))
+    Ok((
+        SidecarProcess {
+            child,
+            stderr,
+            reader,
+            pid_file: pid_file.to_path_buf(),
+        },
+        port,
+    ))
 }
 
 enum Preflight {
@@ -131,7 +161,9 @@ fn find_python(cfg: &RuntimeConfig) -> Result<Vec<String>, SidecarFailure> {
             }
             Preflight::NotFound => {}
             Preflight::TimedOut => {
-                return Err(SidecarFailure::HealthTimeout { after_ms: PREFLIGHT_TIMEOUT.as_millis() as u64 })
+                return Err(SidecarFailure::HealthTimeout {
+                    after_ms: PREFLIGHT_TIMEOUT.as_millis() as u64,
+                })
             }
         }
     }
@@ -143,7 +175,10 @@ fn find_python(cfg: &RuntimeConfig) -> Result<Vec<String>, SidecarFailure> {
 
 fn preflight(argv: &[String]) -> Preflight {
     let mut cmd = python_command(argv, &[], std::iter::empty());
-    cmd.args(["-c", "import hy_memory"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(["-c", "import hy_memory"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     let Ok(mut child) = cmd.spawn() else {
         return Preflight::NotFound;
     };
@@ -164,7 +199,11 @@ fn preflight(argv: &[String]) -> Preflight {
 
 /// `inherited` is the parent's variable names; any matching a stripped prefix is
 /// removed so Hy-Memory cannot fall back to the user's shell configuration.
-fn python_command(argv: &[String], strip: &[&str], inherited: impl Iterator<Item = OsString>) -> Command {
+fn python_command(
+    argv: &[String],
+    strip: &[&str],
+    inherited: impl Iterator<Item = OsString>,
+) -> Command {
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..]);
     for key in inherited {
@@ -184,7 +223,9 @@ fn terminate_child(child: &mut Child) {
     }
     #[cfg(unix)]
     {
-        let _ = Command::new("kill").args(["-TERM", &child.id().to_string()]).status();
+        let _ = Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status();
         let deadline = Instant::now() + TERMINATE_GRACE;
         while Instant::now() < deadline {
             if matches!(child.try_wait(), Ok(Some(_))) {
@@ -202,7 +243,9 @@ fn terminate_child(child: &mut Child) {
 /// reused pid is never touched. Windows has no cheap command-line lookup; there the
 /// stale file is only removed.
 fn reap_stale(pid_file: &Path) {
-    let pid = fs::read_to_string(pid_file).ok().and_then(|s| s.trim().parse::<u32>().ok());
+    let pid = fs::read_to_string(pid_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
     #[cfg(unix)]
     if let Some(pid) = pid {
         reap_unix(pid);
@@ -218,12 +261,17 @@ fn reap_unix(pid: u32) {
         Command::new("ps")
             .args(["-p", &pid.to_string(), "-o", "command="])
             .output()
-            .is_ok_and(|out| out.status.success() && String::from_utf8_lossy(&out.stdout).contains("hy_memory.server"))
+            .is_ok_and(|out| {
+                out.status.success()
+                    && String::from_utf8_lossy(&out.stdout).contains("hy_memory.server")
+            })
     };
     if !is_ours() {
         return;
     }
-    let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+    let _ = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status();
     let deadline = Instant::now() + TERMINATE_GRACE;
     while Instant::now() < deadline {
         if !is_ours() {
@@ -231,7 +279,9 @@ fn reap_unix(pid: u32) {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).status();
+    let _ = Command::new("kill")
+        .args(["-KILL", &pid.to_string()])
+        .status();
 }
 
 #[cfg(all(test, unix))]
@@ -284,17 +334,34 @@ mod tests {
 
     #[test]
     fn python_command_strips_only_prefixed_inherited_vars() {
-        let inherited = ["MEMORY_LLM_API_KEY", "openai_api_key", "HY_MEMORY_SERVER_PORT", "PATH", "HOME"]
-            .into_iter()
-            .map(OsString::from);
-        let cmd = python_command(&["python3".to_string(), "-X".to_string()], INHERITED_ENV_TO_STRIP, inherited);
+        let inherited = [
+            "MEMORY_LLM_API_KEY",
+            "openai_api_key",
+            "HY_MEMORY_SERVER_PORT",
+            "PATH",
+            "HOME",
+        ]
+        .into_iter()
+        .map(OsString::from);
+        let cmd = python_command(
+            &["python3".to_string(), "-X".to_string()],
+            INHERITED_ENV_TO_STRIP,
+            inherited,
+        );
         let mut removed: Vec<String> = cmd
             .get_envs()
             .filter(|(_, v)| v.is_none())
             .map(|(k, _)| k.to_string_lossy().into_owned())
             .collect();
         removed.sort();
-        assert_eq!(removed, vec!["HY_MEMORY_SERVER_PORT", "MEMORY_LLM_API_KEY", "openai_api_key"]);
+        assert_eq!(
+            removed,
+            vec![
+                "HY_MEMORY_SERVER_PORT",
+                "MEMORY_LLM_API_KEY",
+                "openai_api_key"
+            ]
+        );
         assert_eq!(cmd.get_args().collect::<Vec<_>>(), vec!["-X"]);
     }
 
@@ -304,15 +371,25 @@ mod tests {
         let absent = dir.join("no-such-python").to_string_lossy().into_owned();
         assert_eq!(
             find_python(&config(&absent)).unwrap_err(),
-            SidecarFailure::PythonNotFound { tried: vec![absent] }
+            SidecarFailure::PythonNotFound {
+                tried: vec![absent]
+            }
         );
         let without_module = fake_python(&dir, "exit 1");
         assert_eq!(
             find_python(&config(&without_module)).unwrap_err(),
-            SidecarFailure::ModuleMissing { python: without_module }
+            SidecarFailure::ModuleMissing {
+                python: without_module
+            }
         );
-        let with_module = fake_python(&dir, "[ \"$1\" = \"-c\" ] && [ \"$2\" = \"import hy_memory\" ] && exit 0; exit 1");
-        assert_eq!(find_python(&config(&with_module)).unwrap(), vec![with_module]);
+        let with_module = fake_python(
+            &dir,
+            "[ \"$1\" = \"-c\" ] && [ \"$2\" = \"import hy_memory\" ] && exit 0; exit 1",
+        );
+        assert_eq!(
+            find_python(&config(&with_module)).unwrap(),
+            vec![with_module]
+        );
     }
 
     #[test]
@@ -320,18 +397,29 @@ mod tests {
         let dir = temp_dir("spawn");
         let store = dir.join("store");
         let pid_file = dir.join("sidecar.pid");
-        let python = fake_python(&dir, "[ \"$1\" = \"-c\" ] && exit 0\necho \"$@\" > args.txt\nenv > env.txt\nexec sleep 30");
+        let python = fake_python(
+            &dir,
+            "[ \"$1\" = \"-c\" ] && exit 0\necho \"$@\" > args.txt\nenv > env.txt\nexec sleep 30",
+        );
 
         let (mut process, port) = spawn(&config(&python), &store, &pid_file).unwrap();
-        wait_for("env dump", || fs::read_to_string(store.join("env.txt")).is_ok_and(|e| e.contains("MEMORY_MODE")));
+        wait_for("env dump", || {
+            fs::read_to_string(store.join("env.txt")).is_ok_and(|e| e.contains("MEMORY_MODE"))
+        });
         let args = fs::read_to_string(store.join("args.txt")).unwrap();
-        assert_eq!(args.trim(), format!("-m hy_memory.server --host 127.0.0.1 --port {port}"));
+        assert_eq!(
+            args.trim(),
+            format!("-m hy_memory.server --host 127.0.0.1 --port {port}")
+        );
         let env = fs::read_to_string(store.join("env.txt")).unwrap();
         assert!(env.contains(&format!("MEMORY_DATA_DIR={}", store.join("hy").display())));
         assert!(env.contains(&format!("HY_MEMORY_SERVER_PORT={port}")));
         assert!(env.contains("MEMORY_LLM_API_KEY=sk-test"));
         assert!(store.join("hy").is_dir());
-        assert_eq!(fs::read_to_string(&pid_file).unwrap(), process.child.id().to_string());
+        assert_eq!(
+            fs::read_to_string(&pid_file).unwrap(),
+            process.child.id().to_string()
+        );
         assert!(process.try_exited().is_none());
 
         process.terminate();
@@ -341,11 +429,21 @@ mod tests {
     #[test]
     fn exit_status_and_stderr_tail_are_captured() {
         let dir = temp_dir("exit");
-        let python = fake_python(&dir, "[ \"$1\" = \"-c\" ] && exit 0\necho 'Traceback: kuzu lock held' >&2\nexit 3");
-        let (mut process, _) = spawn(&config(&python), &dir.join("store"), &dir.join("sidecar.pid")).unwrap();
+        let python = fake_python(
+            &dir,
+            "[ \"$1\" = \"-c\" ] && exit 0\necho 'Traceback: kuzu lock held' >&2\nexit 3",
+        );
+        let (mut process, _) = spawn(
+            &config(&python),
+            &dir.join("store"),
+            &dir.join("sidecar.pid"),
+        )
+        .unwrap();
         wait_for("exit", || process.try_exited().is_some());
         assert_eq!(process.try_exited().and_then(|s| s.code()), Some(3));
-        assert!(process.into_exit_report().contains("Traceback: kuzu lock held"));
+        assert!(process
+            .into_exit_report()
+            .contains("Traceback: kuzu lock held"));
         assert!(!dir.join("sidecar.pid").exists());
     }
 
@@ -363,7 +461,10 @@ mod tests {
         foreign.wait().unwrap();
 
         let mut ours = Command::new("bash")
-            .args(["-c", "exec -a 'python -m hy_memory.server --port 1' sleep 30"])
+            .args([
+                "-c",
+                "exec -a 'python -m hy_memory.server --port 1' sleep 30",
+            ])
             .spawn()
             .unwrap();
         wait_for("renamed process", || {

@@ -66,12 +66,18 @@ pub struct Snapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProbeResult {
     NotOpen,
-    UnsupportedSite { host: String },
+    UnsupportedSite {
+        host: String,
+    },
     NoConversation,
     /// Conversation URL matched but zero turns matched: selector drift or still loading.
-    UnrecognizedPage { conversation: ConversationKey },
+    UnrecognizedPage {
+        conversation: ConversationKey,
+    },
     Page(Snapshot),
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 pub const MAX_TURNS_PER_PROBE: usize = 24;
@@ -130,7 +136,11 @@ pub(super) fn fnv_fields(fields: &[&[u8]]) -> u64 {
     hash
 }
 
-pub fn fingerprint(conv: &ConvRef, prev: Option<&ObservedTurn>, turn: &ObservedTurn) -> Fingerprint {
+pub fn fingerprint(
+    conv: &ConvRef,
+    prev: Option<&ObservedTurn>,
+    turn: &ObservedTurn,
+) -> Fingerprint {
     let prev_hash = match prev {
         Some(p) => {
             let mut bytes = vec![1u8];
@@ -186,7 +196,8 @@ impl ConversationLedger {
     }
 
     fn abandon(&mut self, fps: &[Fingerprint], gen: GenerationIdentity) {
-        self.abandoned.retain(|(f, g)| *g == gen && !fps.contains(f));
+        self.abandoned
+            .retain(|(f, g)| *g == gen && !fps.contains(f));
         self.abandoned.extend(fps.iter().map(|fp| (*fp, gen)));
         let overflow = self.abandoned.len().saturating_sub(LEDGER_FPS_PER_CONV);
         self.abandoned.drain(..overflow);
@@ -291,7 +302,11 @@ pub fn plan_conversation(
 
     let fps: Vec<Fingerprint> = (0..turns.len())
         .map(|i| {
-            let prev = if i == 0 { snap.context_turn.as_ref() } else { Some(&turns[i - 1]) };
+            let prev = if i == 0 {
+                snap.context_turn.as_ref()
+            } else {
+                Some(&turns[i - 1])
+            };
             fingerprint(&snap.conv, prev, &turns[i])
         })
         .collect();
@@ -319,7 +334,11 @@ pub fn plan_conversation(
     };
     plan.deferred_turns = turns.len() - end;
 
-    let start = if ledger.is_none() { first_sight_cut(turns, end) } else { 0 };
+    let start = if ledger.is_none() {
+        first_sight_cut(turns, end)
+    } else {
+        0
+    };
     plan.baseline = fps[..start].to_vec();
 
     let candidates: Vec<usize> = (start..end)
@@ -382,7 +401,13 @@ fn cut_batches(
                     Role::Assistant => limits.assistant_turn_chars,
                 };
                 let content = truncate_chars(&turns[i].text, limit);
-                (BatchTurn { role: turns[i].role, content }, fps[i])
+                (
+                    BatchTurn {
+                        role: turns[i].role,
+                        content,
+                    },
+                    fps[i],
+                )
             })
             .collect();
         for chunk in items.chunks(limits.max_turns.max(1)) {
@@ -467,12 +492,28 @@ mod tests {
     fn fingerprint_depends_on_every_component() {
         let c = conv("chatgpt", "c1");
         let base = fingerprint(&c, Some(&user("hi")), &assistant("继续"));
-        assert_ne!(base, fingerprint(&conv("claude", "c1"), Some(&user("hi")), &assistant("继续")));
-        assert_ne!(base, fingerprint(&conv("chatgpt", "c2"), Some(&user("hi")), &assistant("继续")));
+        assert_ne!(
+            base,
+            fingerprint(&conv("claude", "c1"), Some(&user("hi")), &assistant("继续"))
+        );
+        assert_ne!(
+            base,
+            fingerprint(
+                &conv("chatgpt", "c2"),
+                Some(&user("hi")),
+                &assistant("继续")
+            )
+        );
         assert_ne!(base, fingerprint(&c, Some(&user("hi")), &user("继续")));
-        assert_ne!(base, fingerprint(&c, Some(&user("hello")), &assistant("继续")));
+        assert_ne!(
+            base,
+            fingerprint(&c, Some(&user("hello")), &assistant("继续"))
+        );
         assert_ne!(base, fingerprint(&c, None, &assistant("继续")));
-        assert_eq!(base, fingerprint(&c, Some(&assistant("hi")), &assistant("继续")));
+        assert_eq!(
+            base,
+            fingerprint(&c, Some(&assistant("hi")), &assistant("继续"))
+        );
     }
 
     #[test]
@@ -515,7 +556,11 @@ mod tests {
         let too_soon = snap(vec![user("q1"), assistant("a1")], None, 5_000);
         let p2 = plan(Some(&empty_ledger()), Some(&tail), &too_soon);
         assert!(p2.batches.is_empty());
-        assert_eq!(p2.next_tail, Some(tail), "first-seen time is kept while unchanged");
+        assert_eq!(
+            p2.next_tail,
+            Some(tail),
+            "first-seen time is kept while unchanged"
+        );
 
         let later = snap(vec![user("q1"), assistant("a1")], None, 31_000);
         let p3 = plan(Some(&empty_ledger()), Some(&tail), &later);
@@ -529,14 +574,20 @@ mod tests {
             at_ms: 0,
         };
         let s = snap(vec![user("q1"), assistant("a1")], Some(true), 60_000);
-        assert!(plan(Some(&empty_ledger()), Some(&tail), &s).batches.is_empty());
+        assert!(plan(Some(&empty_ledger()), Some(&tail), &s)
+            .batches
+            .is_empty());
     }
 
     #[test]
     fn changed_tail_resets_observation_time() {
         let s1 = snap(vec![user("q1"), assistant("a1 partial")], None, 1_000);
         let tail = plan(Some(&empty_ledger()), None, &s1).next_tail.unwrap();
-        let s2 = snap(vec![user("q1"), assistant("a1 partial and more")], None, 40_000);
+        let s2 = snap(
+            vec![user("q1"), assistant("a1 partial and more")],
+            None,
+            40_000,
+        );
         let p2 = plan(Some(&empty_ledger()), Some(&tail), &s2);
         assert!(p2.batches.is_empty());
         assert_eq!(p2.next_tail.map(|t| t.at_ms), Some(40_000));
@@ -554,11 +605,26 @@ mod tests {
             observed_at_ms: 0,
         };
         let fps_of = |s: &Snapshot| -> Vec<Fingerprint> {
-            plan_conversation(None, None, s, GEN, &BatchLimits { max_turns: 100, max_chars: usize::MAX, ..DEFAULT_LIMITS })
-                .baseline
-                .into_iter()
-                .chain(plan(None, None, s).batches.into_iter().flat_map(|b| b.fingerprints))
-                .collect()
+            plan_conversation(
+                None,
+                None,
+                s,
+                GEN,
+                &BatchLimits {
+                    max_turns: 100,
+                    max_chars: usize::MAX,
+                    ..DEFAULT_LIMITS
+                },
+            )
+            .baseline
+            .into_iter()
+            .chain(
+                plan(None, None, s)
+                    .batches
+                    .into_iter()
+                    .flat_map(|b| b.fingerprints),
+            )
+            .collect()
         };
         let first = fps_of(&window(4));
         let second = fps_of(&window(5));
@@ -571,14 +637,27 @@ mod tests {
         let s = snap(dialogue(20), Some(false), 0);
         let p = plan(None, None, &s);
         assert_eq!(p.baseline.len(), 12);
-        assert_eq!(sent_texts(&p), vec!["u12", "a13", "u14", "a15", "u16", "a17", "u18", "a19"]);
+        assert_eq!(
+            sent_texts(&p),
+            vec!["u12", "a13", "u14", "a15", "u16", "a17", "u18", "a19"]
+        );
     }
 
     #[test]
     fn first_sight_window_starts_on_a_user_turn() {
         let turns = vec![
-            user("u0"), assistant("a1"), user("u2"), assistant("a3"), user("u4"), assistant("a5"),
-            assistant("a6"), user("u7"), assistant("a8"), user("u9"), assistant("a10"), user("u11"),
+            user("u0"),
+            assistant("a1"),
+            user("u2"),
+            assistant("a3"),
+            user("u4"),
+            assistant("a5"),
+            assistant("a6"),
+            user("u7"),
+            assistant("a8"),
+            user("u9"),
+            assistant("a10"),
+            user("u11"),
             assistant("a12"),
         ];
         let p = plan(None, None, &snap(turns, Some(false), 0));
@@ -607,7 +686,12 @@ mod tests {
         let first = plan(Some(&empty_ledger()), None, &s);
         let mut ledger = Ledger::default();
         for b in &first.batches {
-            apply_change(&mut ledger, &b.conv, &LedgerChange::Ack(b.fingerprints.clone()), 10);
+            apply_change(
+                &mut ledger,
+                &b.conv,
+                &LedgerChange::Ack(b.fingerprints.clone()),
+                10,
+            );
         }
         let again = plan(ledger.get(&s.conv), None, &s);
         assert!(again.batches.is_empty());
@@ -615,12 +699,25 @@ mod tests {
 
     #[test]
     fn branch_edit_yields_new_fingerprints() {
-        let s1 = snap(vec![user("q1"), assistant("a1"), user("q2"), assistant("a2")], Some(false), 0);
+        let s1 = snap(
+            vec![user("q1"), assistant("a1"), user("q2"), assistant("a2")],
+            Some(false),
+            0,
+        );
         let mut ledger = Ledger::default();
         for b in plan(Some(&empty_ledger()), None, &s1).batches {
             apply_change(&mut ledger, &b.conv, &LedgerChange::Ack(b.fingerprints), 1);
         }
-        let s2 = snap(vec![user("q1"), assistant("a1"), user("q2 edited"), assistant("a2'")], Some(false), 2);
+        let s2 = snap(
+            vec![
+                user("q1"),
+                assistant("a1"),
+                user("q2 edited"),
+                assistant("a2'"),
+            ],
+            Some(false),
+            2,
+        );
         let p = plan(ledger.get(&s2.conv), None, &s2);
         assert_eq!(sent_texts(&p), vec!["q2 edited", "a2'"]);
     }
@@ -636,24 +733,45 @@ mod tests {
             batch.turns[1].content.chars().count(),
             DEFAULT_LIMITS.assistant_turn_chars + TRUNCATION_MARK.chars().count()
         );
-        assert_eq!(batch.fingerprints[1], fingerprint(&s.conv, Some(&s.turns[0]), &s.turns[1]));
+        assert_eq!(
+            batch.fingerprints[1],
+            fingerprint(&s.conv, Some(&s.turns[0]), &s.turns[1])
+        );
     }
 
     #[test]
     fn batches_split_at_exchange_boundaries_by_turn_limit() {
-        let limits = BatchLimits { max_turns: 4, ..DEFAULT_LIMITS };
+        let limits = BatchLimits {
+            max_turns: 4,
+            ..DEFAULT_LIMITS
+        };
         let s = snap(dialogue(10), Some(false), 0);
         let p = plan_conversation(Some(&empty_ledger()), None, &s, GEN, &limits);
         let sizes: Vec<usize> = p.batches.iter().map(|b| b.turns.len()).collect();
         assert_eq!(sizes, vec![4, 4, 2]);
         assert!(p.batches.iter().all(|b| b.turns[0].role == Role::User));
-        assert!(p.batches.iter().all(|b| b.turns.len() == b.fingerprints.len()));
+        assert!(p
+            .batches
+            .iter()
+            .all(|b| b.turns.len() == b.fingerprints.len()));
     }
 
     #[test]
     fn batches_split_by_char_limit() {
-        let limits = BatchLimits { max_chars: 10, ..DEFAULT_LIMITS };
-        let s = snap(vec![user("aaaa"), assistant("bbbb"), user("cccc"), assistant("dddd")], Some(false), 0);
+        let limits = BatchLimits {
+            max_chars: 10,
+            ..DEFAULT_LIMITS
+        };
+        let s = snap(
+            vec![
+                user("aaaa"),
+                assistant("bbbb"),
+                user("cccc"),
+                assistant("dddd"),
+            ],
+            Some(false),
+            0,
+        );
         let p = plan_conversation(Some(&empty_ledger()), None, &s, GEN, &limits);
         assert_eq!(p.batches.len(), 2);
     }
@@ -666,14 +784,26 @@ mod tests {
         let rejected = AddOutcome::Rejected { reason: "x".into() };
         let unknown = AddOutcome::Unknown { reason: "x".into() };
 
-        assert_eq!(after_add(&stored, 2, GEN, &batch), LedgerChange::Ack(batch.fingerprints.clone()));
-        assert_eq!(after_add(&rejected, 0, GEN, &batch), LedgerChange::RetryLater);
-        assert_eq!(after_add(&rejected, 1, GEN, &batch), LedgerChange::RetryLater);
+        assert_eq!(
+            after_add(&stored, 2, GEN, &batch),
+            LedgerChange::Ack(batch.fingerprints.clone())
+        );
+        assert_eq!(
+            after_add(&rejected, 0, GEN, &batch),
+            LedgerChange::RetryLater
+        );
+        assert_eq!(
+            after_add(&rejected, 1, GEN, &batch),
+            LedgerChange::RetryLater
+        );
         assert_eq!(
             after_add(&rejected, MAX_REJECTIONS - 1, GEN, &batch),
             LedgerChange::Abandon(batch.fingerprints.clone(), GEN)
         );
-        assert_eq!(after_add(&unknown, 200, GEN, &batch), LedgerChange::RetryLater);
+        assert_eq!(
+            after_add(&unknown, 200, GEN, &batch),
+            LedgerChange::RetryLater
+        );
     }
 
     #[test]
@@ -687,14 +817,27 @@ mod tests {
         let new_gen = GenerationIdentity(8);
         assert!(!entry.is_done(fp, new_gen));
 
-        apply_change(&mut ledger, &c, &LedgerChange::Abandon(vec![Fingerprint(43)], new_gen), 6);
-        assert_eq!(ledger.get(&c).unwrap().abandoned, vec![(Fingerprint(43), new_gen)]);
+        apply_change(
+            &mut ledger,
+            &c,
+            &LedgerChange::Abandon(vec![Fingerprint(43)], new_gen),
+            6,
+        );
+        assert_eq!(
+            ledger.get(&c).unwrap().abandoned,
+            vec![(Fingerprint(43), new_gen)]
+        );
     }
 
     #[test]
     fn retry_later_leaves_the_ledger_untouched() {
         let mut ledger = Ledger::default();
-        apply_change(&mut ledger, &conv("chatgpt", "c1"), &LedgerChange::RetryLater, 5);
+        apply_change(
+            &mut ledger,
+            &conv("chatgpt", "c1"),
+            &LedgerChange::RetryLater,
+            5,
+        );
         assert!(ledger.conversations.is_empty());
     }
 
@@ -709,15 +852,27 @@ mod tests {
         assert_eq!(acked.front(), Some(&Fingerprint(36)));
 
         for i in 0..(LEDGER_MAX_CONVS as u64 + 5) {
-            apply_change(&mut ledger, &conv("chatgpt", &format!("k{i}")), &LedgerChange::Ack(vec![]), 10 + i);
+            apply_change(
+                &mut ledger,
+                &conv("chatgpt", &format!("k{i}")),
+                &LedgerChange::Ack(vec![]),
+                10 + i,
+            );
         }
         assert_eq!(ledger.conversations.len(), LEDGER_MAX_CONVS);
-        assert!(ledger.get(&c).is_none(), "least recently seen is evicted first");
+        assert!(
+            ledger.get(&c).is_none(),
+            "least recently seen is evicted first"
+        );
     }
 
     #[test]
     fn ledger_round_trips_without_text() {
-        let s = snap(vec![user("secret question"), assistant("secret answer")], Some(false), 0);
+        let s = snap(
+            vec![user("secret question"), assistant("secret answer")],
+            Some(false),
+            0,
+        );
         let mut ledger = Ledger::default();
         for b in plan(Some(&empty_ledger()), None, &s).batches {
             apply_change(&mut ledger, &b.conv, &LedgerChange::Ack(b.fingerprints), 1);

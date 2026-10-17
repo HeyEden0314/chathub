@@ -22,17 +22,29 @@ pub(crate) mod test_support {
     }
 
     pub fn user(text: &str) -> ObservedTurn {
-        ObservedTurn { role: Role::User, text: text.to_string() }
+        ObservedTurn {
+            role: Role::User,
+            text: text.to_string(),
+        }
     }
 
     pub fn assistant(text: &str) -> ObservedTurn {
-        ObservedTurn { role: Role::Assistant, text: text.to_string() }
+        ObservedTurn {
+            role: Role::Assistant,
+            text: text.to_string(),
+        }
     }
 
     /// `u0 a1 u2 a3 …` alternating, `n` turns.
     pub fn dialogue(n: usize) -> Vec<ObservedTurn> {
         (0..n)
-            .map(|i| if i % 2 == 0 { user(&format!("u{i}")) } else { assistant(&format!("a{i}")) })
+            .map(|i| {
+                if i % 2 == 0 {
+                    user(&format!("u{i}"))
+                } else {
+                    assistant(&format!("a{i}"))
+                }
+            })
             .collect()
     }
 
@@ -48,12 +60,19 @@ pub(crate) mod test_support {
 
     pub const GEN: GenerationIdentity = GenerationIdentity(7);
 
-    pub fn plan(ledger: Option<&ConversationLedger>, tail: Option<&TailObservation>, s: &Snapshot) -> ConversationPlan {
+    pub fn plan(
+        ledger: Option<&ConversationLedger>,
+        tail: Option<&TailObservation>,
+        s: &Snapshot,
+    ) -> ConversationPlan {
         plan_conversation(ledger, tail, s, GEN, &DEFAULT_LIMITS)
     }
 
     pub fn sent_texts(p: &ConversationPlan) -> Vec<String> {
-        p.batches.iter().flat_map(|b| b.turns.iter().map(|t| t.content.clone())).collect()
+        p.batches
+            .iter()
+            .flat_map(|b| b.turns.iter().map(|t| t.content.clone()))
+            .collect()
     }
 
     pub fn empty_ledger() -> ConversationLedger {

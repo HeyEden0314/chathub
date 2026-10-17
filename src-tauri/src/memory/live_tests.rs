@@ -58,7 +58,11 @@ impl Drop for KillOnDrop {
 }
 
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 fn wait_until(what: &str, limit: Duration, mut ready: impl FnMut() -> bool) {
@@ -99,23 +103,39 @@ fn add_then_list_round_trips_through_a_real_sidecar() {
             .spawn()
             .unwrap(),
     );
-    wait_until("model stub", Duration::from_secs(10), || TcpStream::connect(("127.0.0.1", stub_port)).is_ok());
+    wait_until("model stub", Duration::from_secs(10), || {
+        TcpStream::connect(("127.0.0.1", stub_port)).is_ok()
+    });
 
     let pid_file = dir.join("sidecar.pid");
-    let (process, port) = sidecar::spawn(&config(&python, stub_port), &dir.join("store"), &pid_file)
-        .unwrap_or_else(|f| panic!("spawn failed: {f:?}"));
+    let (process, port) =
+        sidecar::spawn(&config(&python, stub_port), &dir.join("store"), &pid_file)
+            .unwrap_or_else(|f| panic!("spawn failed: {f:?}"));
     let engine = MemoryEngine::new();
-    let conv = ConvRef { service: ServiceId("chatgpt".into()), conversation: ConversationKey("c-live".into()) };
+    let conv = ConvRef {
+        service: ServiceId("chatgpt".into()),
+        conversation: ConversationKey("c-live".into()),
+    };
     let batch = Batch {
         conv: conv.clone(),
         turns: vec![
-            BatchTurn { role: Role::User, content: "我住在杭州，喜欢喝乌龙茶。".into() },
-            BatchTurn { role: Role::Assistant, content: "好的，记住了。".into() },
+            BatchTurn {
+                role: Role::User,
+                content: "我住在杭州，喜欢喝乌龙茶。".into(),
+            },
+            BatchTurn {
+                role: Role::Assistant,
+                content: "好的，记住了。".into(),
+            },
         ],
         fingerprints: vec![Fingerprint(1), Fingerprint(2)],
         observed_at_ms: 1_792_231_500_000,
     };
-    let query = ListQuery { service_id: Some(conv.service.clone()), offset: 0, limit: 50 };
+    let query = ListQuery {
+        service_id: Some(conv.service.clone()),
+        offset: 0,
+        limit: 50,
+    };
 
     let (deep_check, outcome, page) = tauri::async_runtime::block_on(async {
         let healthz = Instant::now() + Duration::from_secs(120);
@@ -133,7 +153,12 @@ fn add_then_list_round_trips_through_a_real_sidecar() {
             assert!(Instant::now() < healthz, "sidecar never became healthy");
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
-        let status = engine.http.get(sidecar_url(port, "/api/v1/status")).send().await.unwrap();
+        let status = engine
+            .http
+            .get(sidecar_url(port, "/api/v1/status"))
+            .send()
+            .await
+            .unwrap();
         let code = status.status().as_u16();
         let deep_check = parse_deep_check(code, &status.text().await.unwrap());
         let outcome = engine.post_add(port, &batch).await;
@@ -154,7 +179,9 @@ fn add_then_list_round_trips_through_a_real_sidecar() {
     let stop_took = started.elapsed();
 
     assert_eq!(deep_check, Ok(()));
-    let AddOutcome::Stored { memory_ids } = outcome else { panic!("expected Stored, got {outcome:?}") };
+    let AddOutcome::Stored { memory_ids } = outcome else {
+        panic!("expected Stored, got {outcome:?}")
+    };
     assert_eq!(memory_ids.len(), 1);
     let page = page.expect("list parses");
     assert_eq!(page.total, 1);
@@ -164,8 +191,14 @@ fn add_then_list_round_trips_through_a_real_sidecar() {
     assert_eq!(page.items[0].service_id.as_deref(), Some("chatgpt"));
     assert_eq!(page.items[0].conversation_key.as_deref(), Some("c-live"));
 
-    assert!(stop_took < Duration::from_secs(6), "terminate took {stop_took:?}");
-    assert!(TcpStream::connect(("127.0.0.1", port)).is_err(), "sidecar still listening after terminate");
+    assert!(
+        stop_took < Duration::from_secs(6),
+        "terminate took {stop_took:?}"
+    );
+    assert!(
+        TcpStream::connect(("127.0.0.1", port)).is_err(),
+        "sidecar still listening after terminate"
+    );
     assert!(!pid_file.exists());
     eprintln!("terminate took {stop_took:?}");
     let _ = fs::remove_dir_all(&dir);

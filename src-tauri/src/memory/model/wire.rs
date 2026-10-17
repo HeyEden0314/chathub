@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::ingest::{Batch, ConvRef, ConversationKey, ObservedTurn, ProbeResult, Role, ServiceId, Snapshot, MAX_TURNS_PER_PROBE};
+use super::ingest::{
+    Batch, ConvRef, ConversationKey, ObservedTurn, ProbeResult, Role, ServiceId, Snapshot,
+    MAX_TURNS_PER_PROBE,
+};
 
 // ── Hy-Memory wire boundary ─────────────────────────────────────────────────
 
@@ -32,7 +35,11 @@ pub fn add_request_body(batch: &Batch) -> String {
         .iter()
         .map(|t| json!({ "role": t.role.as_str(), "content": t.content }))
         .collect();
-    let fps: Vec<String> = batch.fingerprints.iter().map(|fp| format!("{:016x}", fp.0)).collect();
+    let fps: Vec<String> = batch
+        .fingerprints
+        .iter()
+        .map(|fp| format!("{:016x}", fp.0))
+        .collect();
     json!({
         "messages": messages,
         "user_id": scope.user_id,
@@ -99,13 +106,21 @@ pub fn parse_add_response(http_status: u16, body: &str) -> AddOutcome {
             .map(str::to_string)
     };
     match http_status {
-        200..=299 => match parsed.as_ref().and_then(|v| v.get("success")).and_then(Value::as_bool) {
+        200..=299 => match parsed
+            .as_ref()
+            .and_then(|v| v.get("success"))
+            .and_then(Value::as_bool)
+        {
             Some(true) => AddOutcome::Stored {
                 memory_ids: parsed
                     .as_ref()
                     .and_then(|v| v.get("memory_ids"))
                     .and_then(Value::as_array)
-                    .map(|ids| ids.iter().filter_map(|id| id.as_str().map(str::to_string)).collect())
+                    .map(|ids| {
+                        ids.iter()
+                            .filter_map(|id| id.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default(),
             },
             Some(false) => AddOutcome::Rejected {
@@ -132,14 +147,22 @@ const DEEP_CHECK_MESSAGE_CHARS: usize = 300;
 /// On failure it answers 503 with each failing check as `"error: …"`.
 pub fn parse_deep_check(http_status: u16, body: &str) -> Result<(), String> {
     let parsed: Option<Value> = serde_json::from_str(body).ok();
-    let text = |key: &str| parsed.as_ref().and_then(|v| v.get(key)).and_then(Value::as_str);
+    let text = |key: &str| {
+        parsed
+            .as_ref()
+            .and_then(|v| v.get(key))
+            .and_then(Value::as_str)
+    };
     if (200..=299).contains(&http_status) && text("status") != Some("degraded") {
         return Ok(());
     }
     let failures: Vec<String> = ["llm", "embed", "vdb"]
         .iter()
         .filter_map(|key| {
-            let message = text(key)?.strip_prefix("error")?.trim_start_matches(':').trim();
+            let message = text(key)?
+                .strip_prefix("error")?
+                .trim_start_matches(':')
+                .trim();
             Some(format!("{key}: {message}"))
         })
         .collect();
@@ -230,7 +253,10 @@ pub fn parse_list_response(body: &str, q: &ListQuery) -> Result<MemoryPage, Wire
     let root: Value =
         serde_json::from_str(body).map_err(|e| WireError(format!("invalid list JSON: {e}")))?;
     let Some(vdb) = root.get("vdb") else {
-        let reason = root.get("error").and_then(Value::as_str).unwrap_or("missing vdb bucket");
+        let reason = root
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("missing vdb bucket");
         return Err(WireError(reason.to_string()));
     };
     let rows = vdb
@@ -257,7 +283,11 @@ pub fn parse_list_response(body: &str, q: &ListQuery) -> Result<MemoryPage, Wire
             id,
             text,
             kind,
-            service_id: if kind == MemoryKind::Profile { None } else { text_of(row, "agent_id") },
+            service_id: if kind == MemoryKind::Profile {
+                None
+            } else {
+                text_of(row, "agent_id")
+            },
             conversation_key: text_of(row, "session_id"),
             created_at_ms: row
                 .get("gmt_created")
@@ -303,7 +333,12 @@ fn observed_turn(raw: &ProbeTurnPayload) -> Option<ObservedTurn> {
         Some("assistant") => Role::Assistant,
         _ => return None,
     };
-    let text = raw.text.as_deref()?.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = raw
+        .text
+        .as_deref()?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     (!text.is_empty()).then_some(ObservedTurn { role, text })
 }
 
@@ -364,14 +399,20 @@ mod tests {
         assert_eq!(body["agent_id"], "chatgpt");
         assert_eq!(body["session_id"], "c1");
         assert_eq!(body["memory_at"], "2025-10-17T14:16:00+00:00");
-        assert_eq!(body["messages"][0], json!({"role": "user", "content": "u0"}));
+        assert_eq!(
+            body["messages"][0],
+            json!({"role": "user", "content": "u0"})
+        );
         assert_eq!(body["messages"][1]["role"], "assistant");
         assert_eq!(body["metadata"]["anychat_fps"].as_array().unwrap().len(), 2);
     }
 
     #[test]
     fn parse_deep_check_names_each_failing_check() {
-        assert_eq!(parse_deep_check(200, r#"{"status":"ok","vdb":"ok","embed":"ok","llm":"ok"}"#), Ok(()));
+        assert_eq!(
+            parse_deep_check(200, r#"{"status":"ok","vdb":"ok","embed":"ok","llm":"ok"}"#),
+            Ok(())
+        );
         assert_eq!(
             parse_deep_check(
                 503,
@@ -380,12 +421,21 @@ mod tests {
             Err("llm: Error code: 401 - invalid key; embed: Connection error.".to_string())
         );
         assert_eq!(
-            parse_deep_check(503, r#"{"status":"error","error":"client init failed: boom"}"#),
+            parse_deep_check(
+                503,
+                r#"{"status":"error","error":"client init failed: boom"}"#
+            ),
             Err("client init failed: boom".to_string())
         );
         assert_eq!(parse_deep_check(502, "<html>"), Err("HTTP 502".to_string()));
-        let long = format!(r#"{{"status":"degraded","llm":"error: {}"}}"#, "x".repeat(1000));
-        assert_eq!(parse_deep_check(503, &long).unwrap_err().chars().count(), DEEP_CHECK_MESSAGE_CHARS);
+        let long = format!(
+            r#"{{"status":"degraded","llm":"error: {}"}}"#,
+            "x".repeat(1000)
+        );
+        assert_eq!(
+            parse_deep_check(503, &long).unwrap_err().chars().count(),
+            DEEP_CHECK_MESSAGE_CHARS
+        );
     }
 
     #[test]
@@ -398,36 +448,65 @@ mod tests {
     #[test]
     fn parse_add_response_covers_three_outcomes() {
         assert_eq!(
-            parse_add_response(200, r#"{"success":true,"memory_id":"raw","memory_ids":["f1","f2"]}"#),
-            AddOutcome::Stored { memory_ids: vec!["f1".into(), "f2".into()] }
+            parse_add_response(
+                200,
+                r#"{"success":true,"memory_id":"raw","memory_ids":["f1","f2"]}"#
+            ),
+            AddOutcome::Stored {
+                memory_ids: vec!["f1".into(), "f2".into()]
+            }
         );
         assert_eq!(
             parse_add_response(200, r#"{"success":true,"memory_id":"raw"}"#),
             AddOutcome::Stored { memory_ids: vec![] }
         );
         assert_eq!(
-            parse_add_response(200, r#"{"success":false,"agent_error":"extract failed","error_message":null}"#),
-            AddOutcome::Rejected { reason: "extract failed".into() }
+            parse_add_response(
+                200,
+                r#"{"success":false,"agent_error":"extract failed","error_message":null}"#
+            ),
+            AddOutcome::Rejected {
+                reason: "extract failed".into()
+            }
         );
         assert_eq!(
             parse_add_response(400, r#"{"error":"data, text, or messages is required"}"#),
-            AddOutcome::Rejected { reason: "data, text, or messages is required".into() }
+            AddOutcome::Rejected {
+                reason: "data, text, or messages is required".into()
+            }
         );
-        assert!(matches!(parse_add_response(500, r#"{"error":"boom"}"#), AddOutcome::Unknown { .. }));
-        assert!(matches!(parse_add_response(200, "not json"), AddOutcome::Unknown { .. }));
-        assert!(matches!(parse_add_response(502, ""), AddOutcome::Unknown { .. }));
+        assert!(matches!(
+            parse_add_response(500, r#"{"error":"boom"}"#),
+            AddOutcome::Unknown { .. }
+        ));
+        assert!(matches!(
+            parse_add_response(200, "not json"),
+            AddOutcome::Unknown { .. }
+        ));
+        assert!(matches!(
+            parse_add_response(502, ""),
+            AddOutcome::Unknown { .. }
+        ));
     }
 
     #[test]
     fn list_request_body_clamps_limit_and_filters_by_service() {
-        let q = ListQuery { service_id: Some(ServiceId("claude".into())), offset: 20, limit: 500 };
+        let q = ListQuery {
+            service_id: Some(ServiceId("claude".into())),
+            offset: 20,
+            limit: 500,
+        };
         let body: Value = serde_json::from_str(&list_request_body(&q)).unwrap();
         assert_eq!(body["limit"], 100);
         assert_eq!(body["offset"], 20);
         assert_eq!(body["agent_id"], "claude");
         assert_eq!(body["order"], "desc");
-        let all: Value =
-            serde_json::from_str(&list_request_body(&ListQuery { service_id: None, offset: 0, limit: 0 })).unwrap();
+        let all: Value = serde_json::from_str(&list_request_body(&ListQuery {
+            service_id: None,
+            offset: 0,
+            limit: 0,
+        }))
+        .unwrap();
         assert!(all.get("agent_id").is_none());
         assert_eq!(all["limit"], 1);
     }
@@ -450,7 +529,11 @@ mod tests {
           },
           "graph": {"nodes": []}
         }"#;
-        let q = ListQuery { service_id: None, offset: 0, limit: 8 };
+        let q = ListQuery {
+            service_id: None,
+            offset: 0,
+            limit: 8,
+        };
         let page = parse_list_response(body, &q).unwrap();
         assert_eq!(page.dropped, 3);
         assert_eq!(page.total, 30);
@@ -458,7 +541,13 @@ mod tests {
         let kinds: Vec<MemoryKind> = page.items.iter().map(|i| i.kind).collect();
         assert_eq!(
             kinds,
-            vec![MemoryKind::Fact, MemoryKind::Profile, MemoryKind::Intention, MemoryKind::Summary, MemoryKind::Other]
+            vec![
+                MemoryKind::Fact,
+                MemoryKind::Profile,
+                MemoryKind::Intention,
+                MemoryKind::Summary,
+                MemoryKind::Other
+            ]
         );
         assert_eq!(page.items[0].created_at_ms, Some(1_760_710_560_000));
         assert_eq!(page.items[0].service_id.as_deref(), Some("chatgpt"));
@@ -470,7 +559,11 @@ mod tests {
 
     #[test]
     fn parse_list_response_ends_pagination_and_reports_errors() {
-        let q = ListQuery { service_id: None, offset: 28, limit: 8 };
+        let q = ListQuery {
+            service_id: None,
+            offset: 28,
+            limit: 8,
+        };
         let page = parse_list_response(r#"{"vdb":{"memories":[{"memory_id":"a","content":"b","layer":"l2_fact"}],"total":29}}"#, &q).unwrap();
         assert_eq!(page.next_offset, None);
         assert!(parse_list_response(r#"{"error":"boom"}"#, &q).is_err());
@@ -502,15 +595,23 @@ mod tests {
         assert!(matches!(probe("{"), ProbeResult::Failed { .. }));
         assert_eq!(
             probe(r#"{"ok":false,"error":"TypeError: x"}"#),
-            ProbeResult::Failed { message: "TypeError: x".into() }
+            ProbeResult::Failed {
+                message: "TypeError: x".into()
+            }
         );
         assert_eq!(
-            probe(r#"{"ok":true,"host":"chatgpt.com","conversation":null,"context":null,"turns":[],"streaming":null}"#),
+            probe(
+                r#"{"ok":true,"host":"chatgpt.com","conversation":null,"context":null,"turns":[],"streaming":null}"#
+            ),
             ProbeResult::NoConversation
         );
         assert_eq!(
-            probe(r#"{"ok":true,"conversation":"abc","context":null,"turns":[{"role":"system","text":"x"},{"role":"user","text":"   "}],"streaming":null}"#),
-            ProbeResult::UnrecognizedPage { conversation: ConversationKey("abc".into()) }
+            probe(
+                r#"{"ok":true,"conversation":"abc","context":null,"turns":[{"role":"system","text":"x"},{"role":"user","text":"   "}],"streaming":null}"#
+            ),
+            ProbeResult::UnrecognizedPage {
+                conversation: ConversationKey("abc".into())
+            }
         );
         let ProbeResult::Page(s) = probe(
             r#"{"ok":true,"conversation":"abc","context":{"role":"assistant","text":"prev"},
