@@ -45,6 +45,8 @@ dependencies = [
 name = "anychat"
 version = "0.1.0"
 dependencies = [
+ "gtk",
+ "javascriptcore-rs",
  "regex",
  "reqwest",
  "serde",
@@ -52,6 +54,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tokio",
+ "webkit2gtk",
 ]
 
 [[package]]

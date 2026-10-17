@@ -1,3 +1,5 @@
+mod memory;
+
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -240,6 +242,18 @@ fn should_inject_webview_compatibility_script(url: &str) -> bool {
 
 fn service_window_label(service_id: &str) -> String {
     format!("svc_{}", service_id)
+}
+
+/// Read-only lookup of a service's live content webview, if one has been created.
+pub(crate) fn live_service_webview(
+    app: &tauri::AppHandle,
+    service_id: &str,
+) -> Option<tauri::Webview> {
+    #[cfg(target_os = "windows")]
+    let label = service_window_label(service_id);
+    #[cfg(not(target_os = "windows"))]
+    let label = service_id.to_string();
+    app.get_webview(&label)
 }
 
 fn compute_docked_window_bounds_from_metrics(
@@ -1394,8 +1408,10 @@ pub fn run() {
             windows_service_hosts: Mutex::new(HashMap::new()),
             active_windows_service_id: Mutex::new(None),
         })
+        .manage(memory::MemoryEngine::new())
         .setup(|app| {
             println!("[AnyChat] Setup starting...");
+            memory::start_sweep(app.handle().clone());
 
             let main_webview_window =
                 match WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -1604,7 +1620,11 @@ pub fn run() {
             refresh_service_content,
             hide_all_service_content,
             sync_service_host_state,
-            sync_docked_content_layout
+            sync_docked_content_layout,
+            memory::memory_sync_runtime,
+            memory::memory_ingest,
+            memory::memory_list,
+            memory::memory_status
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1615,6 +1635,9 @@ pub fn run() {
                 show_main_window(_app_handle);
                 let state = _app_handle.state::<AppState>();
                 let _ = show_active_windows_service_host(_app_handle, &state);
+            }
+            if let tauri::RunEvent::Exit = _event {
+                memory::shutdown(_app_handle);
             }
         });
 }

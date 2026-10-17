@@ -5,6 +5,7 @@ import { WebViewContainer } from './WebViewContainer';
 import { AddServiceDialog } from './AddServiceDialog';
 import { SettingsPage } from './SettingsPage';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useMemoryRuntime } from '@/hooks/useMemoryRuntime';
 import {
   activateServiceContent,
   hideAllServiceContent,
@@ -36,6 +37,7 @@ export function AppLayout() {
   const visibleHostServiceId = isAnyDialogOpen ? null : activeService?.id ?? null;
 
   useKeyboardShortcuts();
+  useMemoryRuntime();
 
   useEffect(() => {
     let cancelled = false;

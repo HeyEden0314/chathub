@@ -33,19 +33,24 @@ import {
   Sparkles,
   Trash2,
   Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/stores/app-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+import { assertNever, cn } from '@/lib/utils';
 import { findWorkingIconCandidate, normalizeServiceUrl } from '@/lib/icon';
 import { useCachedIcon } from '@/hooks/useCachedIcon';
+import { MemoryPanel } from '@/components/MemoryPanel';
 import type { ChatService } from '@/types';
+import { SETTINGS_TABS, type SettingsTabEntry } from '@/types/memory';
 
 const ANYCHAT_REPO_URL = 'https://github.com/JS-banana/anychat';
 const AMBERKEEPER_REPO_URL = 'https://github.com/JS-banana/AmberKeeper';
+
+const TAB_ICONS: Record<SettingsTabEntry['icon'], LucideIcon> = { Settings, Brain, Info };
 
 const PRESET_ICONS = [
   { id: 'message', Icon: MessageSquare, label: '聊天' },
@@ -247,44 +252,10 @@ export function SettingsPage() {
     setShowAddDialog(false);
   };
 
-  if (!settingsPageOpen) {
-    return null;
-  }
-
-  return (
-    <div className="flex h-full w-full bg-background text-foreground animate-in fade-in duration-200">
-      <div className="flex w-64 flex-none flex-col border-r bg-muted/30 pt-4">
-        <nav className="flex-1 space-y-1 p-2">
-          <button
-            onClick={() => setSettingsActiveTab('services')}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              settingsActiveTab === 'services'
-                ? 'border-l-2 border-primary bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            )}
-          >
-            <Settings className="h-4 w-4" />
-            服务管理
-          </button>
-
-          <button
-            onClick={() => setSettingsActiveTab('about')}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              settingsActiveTab === 'about'
-                ? 'border-l-2 border-primary bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            )}
-          >
-            <Info className="h-4 w-4" />
-            关于
-          </button>
-        </nav>
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-hidden bg-background">
-        {settingsActiveTab === 'services' && (
+  const renderPane = () => {
+    switch (settingsActiveTab) {
+      case 'services':
+        return (
           <div className="flex-1 overflow-y-auto p-8 max-w-3xl [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
             <div className="mb-6 flex items-center justify-between">
               <div>
@@ -321,9 +292,11 @@ export function SettingsPage() {
               </SortableContext>
             </DndContext>
           </div>
-        )}
-
-        {settingsActiveTab === 'about' && (
+        );
+      case 'memory':
+        return <MemoryPanel />;
+      case 'about':
+        return (
           <div className="flex-1 overflow-y-auto p-8 max-w-3xl">
             <div className="space-y-6">
               <motion.section
@@ -346,8 +319,9 @@ export function SettingsPage() {
                   桌面端使用方式。
                 </p>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-                  聊天数据采集、本地存储等能力已经迁移到 AmberKeeper。AnyChat
-                  只保留网页聚合与服务管理主线，后续也将围绕多 Web 体验继续迭代。
+                  AnyChat 会把你在已开启「记忆」的服务中浏览过的对话，交给本机运行的 Hy-Memory
+                  提炼成长期记忆，不提供聊天记录的浏览、搜索或导出；完整聊天记录的采集、存档与管理仍由
+                  AmberKeeper 承接。
                 </p>
               </motion.section>
 
@@ -360,15 +334,49 @@ export function SettingsPage() {
                 />
                 <AboutCard
                   title="AmberKeeper"
-                  description="聊天数据采集、本地存储与后续沉淀能力，统一转由 AmberKeeper 承接。"
+                  description="完整聊天记录的采集、存档与管理，由 AmberKeeper 承接。"
                   buttonLabel="查看 AmberKeeper"
                   href={AMBERKEEPER_REPO_URL}
                 />
               </div>
             </div>
           </div>
-        )}
+        );
+      default:
+        return assertNever(settingsActiveTab);
+    }
+  };
+
+  if (!settingsPageOpen) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-full w-full bg-background text-foreground animate-in fade-in duration-200">
+      <div className="flex w-64 flex-none flex-col border-r bg-muted/30 pt-4">
+        <nav className="flex-1 space-y-1 p-2">
+          {SETTINGS_TABS.map(({ id, label, icon }) => {
+            const Icon = TAB_ICONS[icon];
+            return (
+              <button
+                key={id}
+                onClick={() => setSettingsActiveTab(id)}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  settingsActiveTab === id
+                    ? 'border-l-2 border-primary bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
+
+      <div className="flex flex-1 flex-col overflow-hidden bg-background">{renderPane()}</div>
 
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-md">
