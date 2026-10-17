@@ -1,3 +1,5 @@
+mod memory;
+
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
