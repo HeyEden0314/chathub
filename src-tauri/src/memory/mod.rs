@@ -1,6 +1,8 @@
 //! Imperative shell for memory. Owns all runtime state, runs the effects that
 //! `model::step` asks for, talks HTTP to the sidecar, and persists the ledger.
 
+#[cfg(test)]
+mod contract_tests;
 mod dto;
 #[cfg(all(test, unix))]
 mod live_tests;

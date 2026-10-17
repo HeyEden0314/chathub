@@ -1,13 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ChatService, DEFAULT_SERVICES } from '@/types';
+import { DEFAULT_MEMORY_SETTINGS, type MemorySettings, type SettingsTab } from '@/types/memory';
+import { parseMemorySettings } from '@/lib/memory';
 
 interface AppState {
   services: ChatService[];
   activeServiceId: string | null;
   settingsPageOpen: boolean;
-  settingsActiveTab: 'services' | 'about';
+  settingsActiveTab: SettingsTab;
   addServiceDialogOpen: boolean;
+  memory: MemorySettings;
 
   setActiveService: (id: string) => void;
   addService: (service: Omit<ChatService, 'id' | 'order'>) => void;
@@ -16,8 +19,11 @@ interface AppState {
   toggleServiceEnabled: (id: string) => void;
   reorderServices: (startIndex: number, endIndex: number) => void;
   setSettingsPageOpen: (open: boolean) => void;
-  setSettingsActiveTab: (tab: 'services' | 'about') => void;
+  setSettingsActiveTab: (tab: SettingsTab) => void;
   setAddServiceDialogOpen: (open: boolean) => void;
+  /** Top-level shallow merge; callers pass whole nested objects. */
+  updateMemorySettings: (patch: Partial<MemorySettings>) => void;
+  setMemoryCapture: (serviceId: string, on: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -28,6 +34,7 @@ export const useAppStore = create<AppState>()(
       settingsPageOpen: false,
       settingsActiveTab: 'services',
       addServiceDialogOpen: false,
+      memory: DEFAULT_MEMORY_SETTINGS,
 
       setActiveService: (id) => {
         const service = get().services.find((s) => s.id === id);
@@ -52,10 +59,14 @@ export const useAppStore = create<AppState>()(
       removeService: (id) => {
         const services = get().services.filter((s) => s.id !== id);
         const activeId = get().activeServiceId;
+        const memory = get().memory;
         set({
           services,
           activeServiceId:
             activeId === id ? (services.find((s) => s.enabled)?.id ?? null) : activeId,
+          memory: memory.captureServiceIds.includes(id)
+            ? { ...memory, captureServiceIds: memory.captureServiceIds.filter((sid) => sid !== id) }
+            : memory,
         });
       },
 
@@ -92,12 +103,21 @@ export const useAppStore = create<AppState>()(
       setSettingsPageOpen: (open) => set({ settingsPageOpen: open }),
       setSettingsActiveTab: (tab) => set({ settingsActiveTab: tab }),
       setAddServiceDialogOpen: (open) => set({ addServiceDialogOpen: open }),
+
+      updateMemorySettings: (patch) => set({ memory: { ...get().memory, ...patch } }),
+
+      setMemoryCapture: (serviceId, on) => {
+        const memory = get().memory;
+        const ids = memory.captureServiceIds.filter((id) => id !== serviceId);
+        set({ memory: { ...memory, captureServiceIds: on ? [...ids, serviceId] : ids } });
+      },
     }),
     {
       name: 'chat-box-app-storage',
       partialize: (state) => ({
         services: state.services,
         activeServiceId: state.activeServiceId,
+        memory: state.memory,
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppState>;
@@ -123,6 +143,7 @@ export const useAppStore = create<AppState>()(
           ...currentState,
           ...persisted,
           services: allServices,
+          memory: parseMemorySettings(persisted.memory),
         };
       },
     }

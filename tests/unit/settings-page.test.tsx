@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import { SettingsPage } from '@/components/SettingsPage';
+import type { SettingsTab } from '@/types/memory';
 
 const { mockOpenUrl } = vi.hoisted(() => ({
   mockOpenUrl: vi.fn(() => Promise.resolve()),
@@ -8,8 +9,8 @@ const { mockOpenUrl } = vi.hoisted(() => ({
 
 type StoreState = {
   settingsPageOpen: boolean;
-  settingsActiveTab: 'services' | 'about';
-  setSettingsActiveTab: (tab: 'services' | 'about') => void;
+  settingsActiveTab: SettingsTab;
+  setSettingsActiveTab: (tab: SettingsTab) => void;
   services: Array<{
     id: string;
     name: string;
@@ -69,7 +70,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByText(/聊天数据采集、本地存储等能力已经迁移到 AmberKeeper/i)
+      screen.getByText(/完整聊天记录的采集、存档与管理仍由 AmberKeeper 承接/)
     ).toBeInTheDocument();
     expect(screen.queryByText(/如果你更关注数据管理和存储/)).not.toBeInTheDocument();
 
@@ -78,5 +79,12 @@ describe('SettingsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /查看 AmberKeeper/i }));
     expect(mockOpenUrl).toHaveBeenCalledWith('https://github.com/JS-banana/AmberKeeper');
+  });
+
+  it('offers a 记忆 tab', () => {
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '记忆' }));
+    expect(storeState.setSettingsActiveTab).toHaveBeenCalledWith('memory');
   });
 });

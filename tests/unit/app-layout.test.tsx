@@ -1,13 +1,16 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { AppLayout } from '@/components/AppLayout';
+import { DEFAULT_MEMORY_SETTINGS, type MemorySettings, type SettingsTab } from '@/types/memory';
 
 const {
   mockActivateServiceContent,
   mockHideAllServiceContent,
   mockSyncServiceHostState,
   mockUsesDockedWindowContentHost,
+  mockSyncMemoryRuntime,
 } = vi.hoisted(() => ({
+  mockSyncMemoryRuntime: vi.fn(() => Promise.resolve()),
   mockActivateServiceContent: vi.fn(() => Promise.resolve()),
   mockHideAllServiceContent: vi.fn(() => Promise.resolve()),
   mockSyncServiceHostState: vi.fn(() => Promise.resolve()),
@@ -35,12 +38,17 @@ vi.mock('@/services/content-host', () => ({
   usesDockedWindowContentHost: mockUsesDockedWindowContentHost,
 }));
 
+vi.mock('@/services/memory-host', () => ({
+  syncMemoryRuntime: mockSyncMemoryRuntime,
+}));
+
 type StoreState = {
   activeServiceId: string | null;
   settingsPageOpen: boolean;
-  settingsActiveTab: 'services' | 'about';
+  settingsActiveTab: SettingsTab;
   addServiceDialogOpen: boolean;
   services: Array<{ id: string; name: string; url: string; enabled: boolean }>;
+  memory: MemorySettings;
 };
 
 let storeState: StoreState = {
@@ -49,10 +57,12 @@ let storeState: StoreState = {
   settingsActiveTab: 'services',
   addServiceDialogOpen: false,
   services: [],
+  memory: DEFAULT_MEMORY_SETTINGS,
 };
 
 vi.mock('@/stores/app-store', () => ({
-  useAppStore: () => storeState,
+  useAppStore: (selector?: (state: StoreState) => unknown) =>
+    selector ? selector(storeState) : storeState,
 }));
 
 vi.mock('@/components/Sidebar', () => ({
@@ -81,6 +91,7 @@ describe('AppLayout', () => {
       settingsActiveTab: 'services',
       addServiceDialogOpen: false,
       services: [],
+      memory: DEFAULT_MEMORY_SETTINGS,
     };
   });
 
@@ -190,5 +201,33 @@ describe('AppLayout', () => {
         null
       );
     });
+  });
+
+  it('pushes memory settings to Rust without touching content hosting', async () => {
+    const services = [
+      { id: 'chatgpt', name: 'ChatGPT', url: 'https://chatgpt.com', enabled: true },
+      { id: 'claude', name: 'Claude', url: 'https://claude.ai', enabled: false },
+    ];
+    const memory = {
+      ...DEFAULT_MEMORY_SETTINGS,
+      enabled: true,
+      captureServiceIds: ['chatgpt', 'claude'],
+    };
+    storeState = {
+      ...storeState,
+      settingsPageOpen: true,
+      settingsActiveTab: 'memory',
+      services,
+      memory,
+    };
+
+    render(<AppLayout />);
+
+    await waitFor(() => {
+      expect(mockSyncMemoryRuntime).toHaveBeenCalledWith(memory, services);
+      expect(mockHideAllServiceContent).toHaveBeenCalled();
+    });
+    expect(mockActivateServiceContent).not.toHaveBeenCalled();
+    expect(mockSyncServiceHostState).not.toHaveBeenCalled();
   });
 });

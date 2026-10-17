@@ -7,3 +7,4 @@ src-tauri/target
 *.svg
 pnpm-lock.yaml
 .git
+src/types/*.generated.ts

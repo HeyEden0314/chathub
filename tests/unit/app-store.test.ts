@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from '@/stores/app-store';
 import { DEFAULT_SERVICES } from '@/types';
+import { DEFAULT_MEMORY_SETTINGS } from '@/types/memory';
 
 describe('AppStore', () => {
   beforeEach(() => {
@@ -11,6 +12,7 @@ describe('AppStore', () => {
       settingsPageOpen: false,
       settingsActiveTab: 'services',
       addServiceDialogOpen: false,
+      memory: DEFAULT_MEMORY_SETTINGS,
     });
   });
 
@@ -186,6 +188,9 @@ describe('AppStore', () => {
 
       setSettingsActiveTab('about');
       expect(useAppStore.getState().settingsActiveTab).toBe('about');
+
+      setSettingsActiveTab('memory');
+      expect(useAppStore.getState().settingsActiveTab).toBe('memory');
     });
   });
 
@@ -214,5 +219,61 @@ describe('AppStore', () => {
       expect(claudeService?.iconUrl).toBe('https://claude.ai/favicon.ico');
     });
 
+    it('fills nested memory defaults and leaves builtin service rows alone', async () => {
+      localStorage.setItem(
+        'chat-box-app-storage',
+        JSON.stringify({
+          state: {
+            services: DEFAULT_SERVICES,
+            activeServiceId: 'chatgpt',
+            memory: { enabled: true },
+          },
+          version: 0,
+        })
+      );
+
+      await useAppStore.persist.rehydrate();
+
+      const state = useAppStore.getState();
+      expect(state.memory).toEqual({ ...DEFAULT_MEMORY_SETTINGS, enabled: true });
+      expect(state.services).toEqual(DEFAULT_SERVICES);
+    });
+  });
+
+  describe('memory settings', () => {
+    it('persists memory with services', () => {
+      useAppStore.getState().updateMemorySettings({ enabled: true });
+      useAppStore.getState().setMemoryCapture('claude', true);
+
+      const blob = JSON.parse(localStorage.getItem('chat-box-app-storage') ?? '{}');
+      expect(blob.state.memory).toEqual({
+        ...DEFAULT_MEMORY_SETTINGS,
+        enabled: true,
+        captureServiceIds: ['claude'],
+      });
+      expect(blob.state.services).toBeDefined();
+    });
+
+    it('toggles capture without duplicates', () => {
+      const { setMemoryCapture } = useAppStore.getState();
+      setMemoryCapture('chatgpt', true);
+      setMemoryCapture('chatgpt', true);
+      setMemoryCapture('claude', true);
+      setMemoryCapture('chatgpt', false);
+
+      expect(useAppStore.getState().memory.captureServiceIds).toEqual(['claude']);
+    });
+
+    it('drops a removed service from the capture list', () => {
+      const { addService, setMemoryCapture } = useAppStore.getState();
+      addService({ name: 'Test AI', url: 'https://test.ai', enabled: true });
+      const custom = useAppStore.getState().services.at(-1)!;
+      setMemoryCapture(custom.id, true);
+      setMemoryCapture('chatgpt', true);
+
+      useAppStore.getState().removeService(custom.id);
+
+      expect(useAppStore.getState().memory.captureServiceIds).toEqual(['chatgpt']);
+    });
   });
 });
