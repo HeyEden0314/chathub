@@ -126,7 +126,6 @@ pub fn parse_add_response(http_status: u16, body: &str) -> AddOutcome {
     }
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemoryKind {
@@ -325,7 +324,6 @@ pub fn parse_probe_payload(service: &ServiceId, json: &str, observed_at_ms: u64)
         observed_at_ms,
     })
 }
-
 
 #[cfg(test)]
 mod tests {

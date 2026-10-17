@@ -244,6 +244,18 @@ fn service_window_label(service_id: &str) -> String {
     format!("svc_{}", service_id)
 }
 
+/// Read-only lookup of a service's live content webview, if one has been created.
+pub(crate) fn live_service_webview(
+    app: &tauri::AppHandle,
+    service_id: &str,
+) -> Option<tauri::Webview> {
+    #[cfg(target_os = "windows")]
+    let label = service_window_label(service_id);
+    #[cfg(not(target_os = "windows"))]
+    let label = service_id.to_string();
+    app.get_webview(&label)
+}
+
 fn compute_docked_window_bounds_from_metrics(
     inner_pos: PhysicalPosition<i32>,
     inner_size: PhysicalSize<u32>,

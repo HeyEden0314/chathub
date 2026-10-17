@@ -22,3 +22,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 regex = "1"
+
+# Same versions wry already links. `v2_40` adds evaluate_javascript with a named
+# world, the only WebKitGTK call that returns a value from an isolated world.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.1", features = ["v2_40"] }
+javascriptcore-rs = "=1.1.2"
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gtk = "0.18"
