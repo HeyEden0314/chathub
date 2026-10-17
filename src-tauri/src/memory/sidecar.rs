@@ -19,6 +19,7 @@ use super::model::{python_candidates, sidecar_env, RuntimeConfig, SidecarFailure
 
 /// First import compiles bytecode for chromadb, kuzu, and openai; that can be slow.
 const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(unix)]
 const TERMINATE_GRACE: Duration = Duration::from_secs(3);
 const STDERR_LINES: usize = 40;
 const STDERR_TAIL_CHARS: usize = 1_500;

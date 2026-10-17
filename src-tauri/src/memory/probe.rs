@@ -158,6 +158,7 @@ pub enum EvalError {
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     UnsupportedPlatform,
     WebviewGone(String),
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Engine(String),
     Timeout,
 }
