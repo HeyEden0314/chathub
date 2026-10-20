@@ -35,3 +35,11 @@
 ---
 
 _详细信息请参阅文档索引中的具体文档_
+
+## Cursor Cloud specific instructions
+
+- 前端开发服务是 `pnpm dev`。Vite 在 `vite.config.ts` 里固定端口 `1420`（`strictPort`）。配置里的 `host: false` 只监听 IPv6 localhost；要让 `127.0.0.1` 可访问，使用 `pnpm dev --host 127.0.0.1 --port 1420`。
+- `package.json` 没有 test script。单元测试命令是 `pnpm exec vitest run`。
+- 前端类型检查和生产构建是 `pnpm build`（`tsc` 然后 `vite build`）。
+- Rust 检查在 `src-tauri` 目录执行 `cargo check`。当前 Tauri 依赖需要 Rust 1.85 或更高（edition 2024）。基础镜像自带的 Rust 1.83 会在 `zbus` 上失败。Linux 编译还需要 WebKitGTK 4.1 开发包：`libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`librsvg2-dev`、`patchelf`、`libssl-dev`、`libayatana-appindicator3-dev`、`libxdo-dev`、`build-essential`、`pkg-config`、`file`。
+- 浏览器打开 Vite 地址可以操作侧边栏、设置页和添加服务。聊天页面由 Tauri webview 承载，不会出现在这个页面里。
